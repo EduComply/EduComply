@@ -5,6 +5,7 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { withVerifiedTls } from '../src/shared/infrastructure/database/sslmode.js';
 
 const rootEnvFile = fileURLToPath(new URL('../../.env', import.meta.url));
 if (existsSync(rootEnvFile)) process.loadEnvFile(rootEnvFile);
@@ -15,7 +16,10 @@ if (!url) {
   process.exit(1);
 }
 
-const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 15_000 });
+const client = new pg.Client({
+  connectionString: withVerifiedTls(url),
+  connectionTimeoutMillis: 15_000,
+});
 try {
   await client.connect();
   const meta = await client.query<{ db: string; version: string }>(

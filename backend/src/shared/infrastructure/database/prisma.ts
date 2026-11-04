@@ -2,6 +2,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, type Prisma } from '../../../generated/prisma/client.js';
 import { env } from '../../../config/env.js';
 import { DatabaseNotConfiguredError } from './errors.js';
+import { withVerifiedTls } from './sslmode.js';
 import { errorCode, type DependencyStatus } from '../dependency.js';
 
 /** A Prisma client or an interactive-transaction client; repositories accept either. */
@@ -17,9 +18,9 @@ export function getPrisma(): PrismaClient {
   if (!client) {
     if (!env.DATABASE_URL) throw new DatabaseNotConfiguredError();
     // Bounded timeouts so a blocked or sleeping Neon endpoint fails fast instead of hanging.
-    // TLS stays on (sslmode from DATABASE_URL; pg verifies the certificate).
+    // TLS stays on and the certificate is always verified (sslmode made explicit for pg).
     const adapter = new PrismaPg({
-      connectionString: env.DATABASE_URL,
+      connectionString: withVerifiedTls(env.DATABASE_URL),
       max: 10,
       connectionTimeoutMillis: 10_000, // new connection (DNS + TCP + TLS + auth)
       idleTimeoutMillis: 30_000,

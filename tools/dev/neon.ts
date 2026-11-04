@@ -1,6 +1,7 @@
 import { lookup } from 'node:dns/promises';
 import net from 'node:net';
 import tls from 'node:tls';
+import { withVerifiedTls } from '../../backend/src/shared/infrastructure/database/sslmode.js';
 
 /**
  * Classified outcome of a database connectivity diagnosis. Each stage is bounded by a
@@ -198,7 +199,7 @@ export async function diagnoseDatabase(
 
   const pg = (await import('pg')).default;
   const client = new pg.Client({
-    connectionString: url,
+    connectionString: withVerifiedTls(url),
     connectionTimeoutMillis: timeoutMs,
     query_timeout: timeoutMs,
   });

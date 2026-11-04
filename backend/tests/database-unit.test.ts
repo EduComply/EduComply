@@ -4,6 +4,7 @@ import { hashIp } from '../src/modules/audit/infrastructure/auditRepository.js';
 import { DEFAULT_ROLE, isRoleName, ROLE_NAMES } from '../src/modules/users/domain/roles.js';
 import { normaliseEmail } from '../src/modules/users/infrastructure/userRepository.js';
 import { parseEnv } from '../src/config/env.js';
+import { withVerifiedTls } from '../src/shared/infrastructure/database/sslmode.js';
 import {
   DatabaseNotConfiguredError,
   databaseErrorCode,
@@ -75,5 +76,26 @@ describe('domain helpers', () => {
 
   it('hashes IP addresses with SHA-256', () => {
     expect(hashIp('203.0.113.7')).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe('withVerifiedTls (explicit certificate verification for pg)', () => {
+  const base = 'postgresql://u:p@ep-example.neon.tech/db';
+  it.each(['require', 'prefer', 'verify-ca'])('upgrades sslmode=%s to verify-full', (mode) => {
+    const out = new URL(withVerifiedTls(`${base}?sslmode=${mode}&channel_binding=require`));
+    expect(out.searchParams.get('sslmode')).toBe('verify-full');
+    expect(out.searchParams.get('channel_binding')).toBe('require');
+    expect(out.password).toBe('p');
+  });
+  it('leaves verify-full, disable, missing sslmode and libpq-compat URLs unchanged', () => {
+    for (const url of [
+      `${base}?sslmode=verify-full`,
+      `${base}?sslmode=disable`,
+      base,
+      `${base}?uselibpqcompat=true&sslmode=require`,
+      'not a url',
+    ]) {
+      expect(withVerifiedTls(url)).toBe(url);
+    }
   });
 });
