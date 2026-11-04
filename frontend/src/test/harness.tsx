@@ -11,6 +11,8 @@ export const ME: Me = {
   displayName: 'Lea Learner',
   email: 'learner1@educomply.test',
   roles: ['LEARNER'],
+  portals: ['learner'],
+  homePath: '/learner/dashboard',
   userType: 'STUDENT',
   department: null,
   institutionalId: null,

@@ -15,6 +15,8 @@ const ADMIN: Me = {
   displayName: 'Ada Admin',
   email: 'ada@uni.test',
   roles: ['ADMIN'],
+  portals: ['admin'],
+  homePath: '/admin/dashboard',
 };
 const REVIEWER: Me = { ...ADMIN, id: 'rev-0001', displayName: 'Rae Reviewer', roles: ['REVIEWER'] };
 
@@ -112,7 +114,7 @@ describe('access control', () => {
       within(nav)
         .getAllByRole('link')
         .map((l) => l.textContent),
-    ).toEqual(['Dashboard', 'Monitoring', 'Reports']);
+    ).toEqual(['Dashboard', 'Monitoring', 'Reports', 'Audit Events', 'Profile']);
     expect(screen.getByText('Reviewer')).toBeTruthy();
     // Reviewers never call the ADMIN-only users API from the dashboard.
     expect(fetch.mock.calls.some(([u]) => String(u).startsWith('/api/v1/users'))).toBe(false);
@@ -354,14 +356,16 @@ describe('admin shell', () => {
         .map((l) => l.textContent),
     ).toEqual([
       'Dashboard',
-      'Users',
-      'Learners',
+      'User Management',
+      'Learner Management',
       'Courses',
       'Videos',
       'Question Banks',
       'Monitoring',
       'Certificates',
       'Reports',
+      'Audit Events',
+      'Profile',
     ]);
     fireEvent.click(within(nav).getByRole('link', { name: 'Courses' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Courses' })).toBeTruthy();

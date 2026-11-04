@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { postLoginPath } from '../domain/portal.js';
 import { safeReturnTo, type SessionData } from '../domain/session.js';
 import {
   IdentityProviderError,
@@ -147,7 +148,9 @@ export class AuthService {
       createdAt: new Date().toISOString(),
     };
     const sessionId = await this.deps.sessions.create(session);
-    return { sessionId, session, user: result.user, returnTo: loginState.returnTo };
+    // Role-based landing page: decided from the database role, not from the request.
+    const returnTo = postLoginPath(loginState.returnTo, [result.user.role]);
+    return { sessionId, session, user: result.user, returnTo };
   }
 
   /**

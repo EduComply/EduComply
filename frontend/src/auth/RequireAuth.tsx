@@ -1,15 +1,28 @@
 import type { ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { ErrorState, LoadingState } from '@/components/ui';
 import { Icon } from '@/components/icons';
 import { useAuth } from './authContext';
-import { loginUrl, type Role } from './session';
+import { loginUrl, type Portal, type Role } from './session';
 
 /**
- * Route guard. Content renders only for a valid server session (GET /me). The backend
- * enforces the same rules on every API call; this guard only decides what the UI shows.
+ * Route guard. Content renders only for a valid server session (GET /me). `portal` uses the
+ * portals the server reports for the user's database role; `roles` restricts single pages.
+ * The backend enforces the same rules on every API call; this guard only decides what the
+ * UI shows. With `redirectToHome`, a signed-in user without access is sent to their own
+ * portal instead of seeing the access-denied screen.
  */
-export function RequireAuth({ roles, children }: { roles?: Role[]; children: ReactNode }) {
+export function RequireAuth({
+  portal,
+  roles,
+  redirectToHome = false,
+  children,
+}: {
+  portal?: Portal;
+  roles?: Role[];
+  redirectToHome?: boolean;
+  children: ReactNode;
+}) {
   const { state, refresh } = useAuth();
   const { pathname, search } = useLocation();
 
@@ -58,15 +71,28 @@ export function RequireAuth({ roles, children }: { roles?: Role[]; children: Rea
     );
   }
 
-  if (roles && !state.user.roles.some((r) => roles.includes(r))) {
+  const user = state.user;
+  const allowed =
+    (!portal || user.portals.includes(portal)) &&
+    (!roles || user.roles.some((r) => roles.includes(r)));
+  if (!allowed) {
+    // Never redirect to the page being guarded (no loop): "/" is the public landing page.
+    if (redirectToHome && !pathname.startsWith(user.homePath)) {
+      return <Navigate to={user.homePath} replace />;
+    }
+    const home = user.portals.includes('admin') ? 'admin' : 'learner';
     return (
       <div className="gate">
         <ErrorState
           title="You don't have access to this area"
-          message={`This section requires the ${roles.join(' or ')} role.`}
+          message={
+            roles
+              ? `This section requires the ${roles.join(' or ')} role.`
+              : `Your account does not have access to the ${portal} portal.`
+          }
           action={
-            <a className="btn btn-primary" href="/learner/dashboard">
-              Go to the learner portal
+            <a className="btn btn-primary" href={user.homePath}>
+              Go to the {home} portal
             </a>
           }
         />

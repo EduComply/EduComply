@@ -117,7 +117,7 @@ describe('OIDC login (authorization code + PKCE)', () => {
         .get('/api/v1/auth/oidc/callback')
         .query({ code, state })
         .set('Cookie', `ec_login=${state}`);
-    expect((await call()).headers.location).toBe(`${PORTAL}/learner`.replace('/learner', '/'));
+    expect((await call()).headers.location).toBe(`${PORTAL}/learner/dashboard`);
     expect((await call()).headers.location).toBe(`${PORTAL}/?authError=LOGIN_EXPIRED`);
   });
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Errors } from '../../../shared/http/problem.js';
 import { validate, validated } from '../../../shared/http/validate.js';
 import type { AuthUser } from '../../auth/application/ports.js';
+import { homePathFor, portalsFor } from '../../auth/domain/portal.js';
 import type { AuthGuards } from '../../auth/presentation/authGuards.js';
 import { UserAdminError, type UserAdminService } from '../application/userAdmin.js';
 import { ROLE_NAMES } from '../domain/roles.js';
@@ -46,6 +47,9 @@ export function usersRouter(deps: { guards: AuthGuards; admin: UserAdminService 
     const auth = req.auth!;
     res.set('Cache-Control', 'no-store').json({
       ...userView(auth.user),
+      // Portals and landing page decided by the server from the database role.
+      portals: portalsFor([auth.user.role]),
+      homePath: homePathFor([auth.user.role]),
       csrfToken: auth.session.csrfToken,
     });
   });

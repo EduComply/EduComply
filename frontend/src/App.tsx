@@ -12,6 +12,7 @@ import {
   ReportsPage,
   VideosPage,
 } from '@/features/admin/pages/ContentPages';
+import { AuditEventsPage } from '@/features/admin/pages/AuditEventsPage';
 import { LearnersPage } from '@/features/admin/pages/LearnersPage';
 import { UserDetailPage } from '@/features/admin/pages/UserDetailPage';
 import { UsersPage } from '@/features/admin/pages/UsersPage';
@@ -37,11 +38,12 @@ export function App() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
 
-      {/* Learner portal — Figma "EduComply — Learner Portal" (frames 1:2–1:11) */}
+      {/* Learner portal — Figma "EduComply — Learner Portal" (frames 1:2–1:11).
+          LEARNER only (portal reported by GET /me); staff are sent to their own portal. */}
       <Route
         path="/learner"
         element={
-          <RequireAuth>
+          <RequireAuth portal="learner" redirectToHome>
             <AppShell
               basePath="/learner"
               portalLabel="Learner portal"
@@ -69,7 +71,7 @@ export function App() {
       <Route
         path="/admin"
         element={
-          <RequireAuth roles={['ADMIN', 'REVIEWER']}>
+          <RequireAuth portal="admin">
             <AdminLayout />
           </RequireAuth>
         }
@@ -85,6 +87,7 @@ export function App() {
         <Route path="monitoring" element={<MonitoringPage />} />
         <Route path="certificates" element={adminOnly(<CertificatesPage />)} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="audit" element={<AuditEventsPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="*" element={<NotFoundPage embedded />} />
       </Route>

@@ -171,6 +171,16 @@ Rate limits (Redis): `/auth/*` 20/min per IP (fails closed), signed-in routes 30
 
 **Roles.** New users always start as **LEARNER**; roles are never taken from the identity provider and existing roles are kept on later logins. Only an ADMIN (audited endpoint) or the development `db:grant-role` tool can change a role; admins cannot change their own role or demote the last admin.
 
+**Portals and landing page.** The backend decides from the database role (never from Keycloak, the email or the browser) which portal a user may open and where they land after signing in; `GET /api/v1/me` returns both as `portals` and `homePath`.
+
+| Role       | Portal                             | Lands on             |
+| ---------- | ---------------------------------- | -------------------- |
+| `ADMIN`    | admin (all admin pages)            | `/admin/dashboard`   |
+| `REVIEWER` | admin (monitoring, reports, audit) | `/admin/dashboard`   |
+| `LEARNER`  | learner                            | `/learner/dashboard` |
+
+Priority if a user ever holds several roles: ADMIN, then REVIEWER, then LEARNER. A deep link (a page opened before signing in) is kept only if the user's portal allows it; otherwise the user lands on their home page. A learner opening `/admin` sees "You don't have access" and every admin API returns `403`; staff opening `/learner` are sent to the admin portal. A new account is always a LEARNER until an administrator changes the role (or `npm run db:grant-role` is run), so a person who should be an administrator must sign in once and then be granted ADMIN.
+
 ### Local Keycloak and test identities (development only)
 
 1. `npm run auth:init-env` — writes `OIDC_*` and `KEYCLOAK_ADMIN_*` to `.env` (random secrets, never printed).

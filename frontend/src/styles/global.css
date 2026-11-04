@@ -117,6 +117,22 @@ button {
   display: none;
 }
 
+/* The menu scrolls inside the sidebar when it is taller than the window (e.g. the admin
+   portal on a 720px-high screen), so the logo and the Log out button always stay visible. */
+.sidebar > nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0 -6px 12px;
+  padding: 0 6px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.35) transparent;
+}
+
+.logout-button {
+  flex-shrink: 0;
+}
+
 .nav {
   display: flex;
   flex-direction: column;

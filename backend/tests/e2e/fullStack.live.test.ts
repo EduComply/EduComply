@@ -78,22 +78,38 @@ describe(`full stack over DATABASE_TRANSPORT=${env.DATABASE_TRANSPORT}`, () => {
         },
       });
 
-      // 1. Keycloak login (authorization code + PKCE) → callback → Redis session.
-      const start = await request(app).get('/api/v1/auth/login').query({ returnTo: '/learner' });
-      expect(start.status).toBe(302);
-      const loginCookie = cookiesFrom(start).ec_login!.value;
-      const callback = new URL(await signInAtKeycloak(start.headers.location!));
-      const cb = await request(app)
-        .get(`${callback.pathname}${callback.search}`)
-        .set('Cookie', `ec_login=${loginCookie}`);
-      expect(cb.status, cb.headers.location).toBe(302);
-      expect(cb.headers.location).toBe(`${env.APP_ORIGIN}/learner`);
-      const cookie = `ec_session=${cookiesFrom(cb).ec_session!.value}`;
+      /** Keycloak login (authorization code + PKCE) → callback; returns redirect + cookie. */
+      const signIn = async (returnTo?: string) => {
+        const start = await request(app)
+          .get('/api/v1/auth/login')
+          .query(returnTo ? { returnTo } : {});
+        expect(start.status).toBe(302);
+        const loginCookie = cookiesFrom(start).ec_login!.value;
+        const callback = new URL(await signInAtKeycloak(start.headers.location!));
+        const cb = await request(app)
+          .get(`${callback.pathname}${callback.search}`)
+          .set('Cookie', `ec_login=${loginCookie}`);
+        expect(cb.status, cb.headers.location).toBe(302);
+        return {
+          location: cb.headers.location as string,
+          cookie: `ec_session=${cookiesFrom(cb).ec_session!.value}`,
+        };
+      };
+
+      // 1. First sign-in (no fixed return path) → LEARNER → learner dashboard.
+      const first = await signIn();
+      expect(first.location).toBe(`${env.APP_ORIGIN}/learner/dashboard`);
+      const cookie = first.cookie;
 
       // 2. Learner dashboard data: user lookup + LEARNER role from the database.
       const me = await request(app).get('/api/v1/me').set('Cookie', cookie);
       expect(me.status, JSON.stringify(me.body)).toBe(200);
-      expect(me.body).toMatchObject({ email: testUser.email, roles: ['LEARNER'] });
+      expect(me.body).toMatchObject({
+        email: testUser.email,
+        roles: ['LEARNER'],
+        portals: ['learner'],
+        homePath: '/learner/dashboard',
+      });
       const userId = me.body.id as string;
 
       // 3. Identity linked and audit events written in the user-sync transaction.
@@ -147,7 +163,23 @@ describe(`full stack over DATABASE_TRANSPORT=${env.DATABASE_TRANSPORT}`, () => {
         .set('X-CSRF-Token', me.body.csrfToken as string);
       expect(out.status, JSON.stringify(out.body)).toBe(200);
       expect((await request(app).get('/api/v1/me').set('Cookie', cookie)).status).toBe(401);
-    }, 60_000);
+
+      // 8. Signing in again as the (now) ADMIN lands in the admin portal — even when the
+      //    sign-in started from a learner page — and a new session is issued.
+      const again = await signIn('/learner');
+      expect(again.location).toBe(`${env.APP_ORIGIN}/admin/dashboard`);
+      expect(again.cookie).not.toBe(cookie);
+      const adminMe = await request(app).get('/api/v1/me').set('Cookie', again.cookie);
+      expect(adminMe.body).toMatchObject({
+        roles: ['ADMIN'],
+        portals: ['admin'],
+        homePath: '/admin/dashboard',
+      });
+      await request(app)
+        .post('/api/v1/auth/logout')
+        .set('Cookie', again.cookie)
+        .set('X-CSRF-Token', adminMe.body.csrfToken as string);
+    }, 90_000);
 
     // Rolled back: nothing from this test exists in the database.
     expect(await getPrisma().user.count({ where: { email: testUser.email } })).toBe(0);

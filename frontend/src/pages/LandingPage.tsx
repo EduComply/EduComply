@@ -44,12 +44,13 @@ export function LandingPage() {
               <p>
                 Signed in as <strong>{signedIn.displayName}</strong> ({signedIn.roles.join(', ')})
               </p>
-              <Link to="/learner/dashboard" className="btn btn-primary">
-                Go to learner portal
+              <Link to={signedIn.homePath} className="btn btn-primary">
+                {signedIn.portals.includes('admin') ? 'Go to admin portal' : 'Go to learner portal'}
               </Link>
             </>
           ) : (
-            <a href={loginUrl('/learner')} className="btn btn-primary">
+            // No fixed returnTo: the server picks the portal for the user's role.
+            <a href={loginUrl()} className="btn btn-primary">
               Sign in with institutional account
             </a>
           )}

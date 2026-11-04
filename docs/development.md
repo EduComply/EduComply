@@ -150,7 +150,7 @@ npm run docker:up           # builds on the first run (several minutes), then st
 npm run dev:health
 ```
 
-**Walkthrough:** http://localhost:5173 → **Sign in** → learner `learner1` (Keycloak) → dashboard shows your name; open a protected page; **Log out**. Then sign in as an administrator (`npm run db:grant-role -- --email <admin email> --role ADMIN --reason "Sprint 1 demo"` beforehand) → `/admin/users` lists real users. A learner opening `/admin` sees "You don't have access".
+**Walkthrough:** http://localhost:5173 → **Sign in** → learner `learner1` (Keycloak) → dashboard shows your name; open a protected page; **Log out**. Then sign in as an administrator (the account must have signed in once and been granted ADMIN beforehand: `npm run db:grant-role -- --email <admin email> --role ADMIN --reason "Sprint 1 demo"`): Sign in lands on `/admin/dashboard` with the admin menu, and **User Management** lists real users. A learner opening `/admin` sees "You don't have access".
 
 **Redis sessions:** after signing in, `npm run dev:health` → readiness `redis: up`; sign-out clears the `ec_session` cookie.
 
