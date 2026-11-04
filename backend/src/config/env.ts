@@ -37,8 +37,27 @@ const EnvSchema = z
     DATABASE_URL: optionalPostgresUrl,
     DIRECT_URL: optionalPostgresUrl,
 
-    // Declared now, required by later Sprint 1 tasks (Redis, OIDC).
-    REDIS_URL: optionalString,
+    // Comma-separated browser origins allowed by CORS. Defaults to APP_ORIGIN.
+    CORS_ORIGINS: optionalString.refine(
+      (v) =>
+        v === undefined ||
+        v
+          .split(',')
+          .map((o) => o.trim())
+          .every((o) => /^https?:\/\/[^/\s]+\/?$/.test(o)),
+      { message: 'must be comma-separated origins like https://host[:port] (no paths)' },
+    ),
+
+    // Redis: temporary state only (sessions, rate limits, short-lived tokens).
+    REDIS_URL: optionalString.refine((v) => v === undefined || /^rediss?:\/\/[^\s]+$/.test(v), {
+      message: 'must be a redis:// or rediss:// URL',
+    }),
+    REDIS_KEY_PREFIX: z
+      .string()
+      .regex(/^[a-z0-9_-]+:$/, 'lower-case letters, digits, _ or -, ending with ":"')
+      .default('educomply:'),
+
+    // Declared now, required by Task 4 (authentication).
     SESSION_SECRET: optionalString,
     OIDC_ISSUER: optionalString,
     OIDC_CLIENT_ID: optionalString,
@@ -46,10 +65,21 @@ const EnvSchema = z
     OIDC_REDIRECT_URI: optionalString,
   })
   .superRefine((cfg, ctx) => {
-    if (cfg.NODE_ENV === 'production' && !cfg.DATABASE_URL) {
-      ctx.addIssue({ code: 'custom', path: ['DATABASE_URL'], message: 'required in production' });
+    if (cfg.NODE_ENV === 'production') {
+      for (const key of ['DATABASE_URL', 'REDIS_URL'] as const) {
+        if (!cfg[key])
+          ctx.addIssue({ code: 'custom', path: [key], message: 'required in production' });
+      }
     }
-  });
+  })
+  .transform((cfg) => ({
+    ...cfg,
+    /** Parsed CORS allow-list (exact origin match). */
+    corsOrigins: (cfg.CORS_ORIGINS ?? cfg.APP_ORIGIN)
+      .split(',')
+      .map((o) => o.trim().replace(/\/$/, ''))
+      .filter(Boolean),
+  }));
 
 export type Env = z.infer<typeof EnvSchema>;
 

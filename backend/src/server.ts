@@ -1,39 +1,36 @@
-import { createApp } from './app.js';
-import { env } from './config/env.js';
-import { logger } from './shared/logger.js';
-import { checkDatabase, disconnectPrisma } from './shared/infrastructure/database/prisma.js';
-
-const app = createApp();
-
-const server = app.listen(env.PORT, () => {
-  logger.info(`EduComply API listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
-  // Non-blocking startup probe: report status/code only, never connection details.
-  void checkDatabase().then((db) => {
-    if (db.status === 'up') logger.info({ latencyMs: db.latencyMs }, 'Database connected');
-    else
-      logger.warn({ database: db }, 'Database not available; /api/v1/health/ready will report 503');
-  });
-});
-
-let shuttingDown = false;
-
-async function shutdown(signal: string): Promise<void> {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.info(`${signal} received, shutting down`);
-  const forceExit = setTimeout(() => process.exit(1), 10_000);
-  forceExit.unref();
-
-  server.close(async () => {
-    try {
-      await disconnectPrisma();
-      process.exit(0);
-    } catch (err) {
-      logger.error({ err }, 'Error while closing database connections');
-      process.exit(1);
-    }
-  });
+/**
+ * Process entry point. Configuration is validated on import, so it is loaded
+ * dynamically here to turn an invalid environment into a clean, secret-free exit.
+ */
+let bootstrap: typeof import('./bootstrap.js');
+let config: typeof import('./config/env.js');
+try {
+  config = await import('./config/env.js');
+  bootstrap = await import('./bootstrap.js');
+} catch (err) {
+  // parseEnv errors list variable names only, never values.
+  console.error(`Startup failed: ${(err as Error).message}`);
+  process.exit(1);
 }
 
-process.on('SIGINT', () => void shutdown('SIGINT'));
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
+const { logger } = await import('./shared/logger.js');
+
+try {
+  const running = await bootstrap.startServer({ port: config.env.PORT });
+
+  const onSignal = (signal: NodeJS.Signals) => {
+    running
+      .shutdown(signal)
+      .then(() => process.exit(0))
+      .catch((err: unknown) => {
+        logger.error({ err }, 'Shutdown failed');
+        process.exit(1);
+      });
+    setTimeout(() => process.exit(1), 15_000).unref();
+  };
+  process.once('SIGINT', onSignal);
+  process.once('SIGTERM', onSignal);
+} catch (err) {
+  logger.fatal({ code: (err as { code?: string }).code }, 'Server failed to start');
+  process.exit(1);
+}

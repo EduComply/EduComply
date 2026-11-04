@@ -19,9 +19,20 @@ Video files ──► S3 + CloudFront (signed URLs; never through the API)      
 
 ## Request pipeline (backend)
 
-`helmet` → `pino-http` request logging (credentials redacted) → JSON body (100 kB limit) → module routers under `/api/v1` → 404 → error handler (RFC 9457 `application/problem+json`).
+request id + `pino-http` JSON access log (method, path, status, requestId only) → `helmet` security headers → CORS (explicit allow-list) → JSON body (100 kB, strict) → module routers under `/api/v1` → 404 → central error handler (RFC 9457 problem with `code` and `requestId`).
 
-Later Sprint 1 branches add: Redis session store, CSRF check, rate limits, authentication and role middleware, audit writer.
+Shared building blocks (Task 3): `validate()` (Zod, strict), `rateLimit()` with Redis/memory stores, `RedisTtlStore` for expiring JSON (sessions, OIDC state), `startServer()` with graceful shutdown (drain HTTP, then close PostgreSQL and Redis).
+
+Task 4 adds: session middleware on `RedisTtlStore`, CSRF check, `/auth/*` rate limits, authentication and role middleware.
+
+### Health
+
+| Endpoint             | Meaning                                                                                    | Codes     |
+| -------------------- | ------------------------------------------------------------------------------------------ | --------- |
+| `GET /api/v1/health` | Liveness — process is running (no dependency calls)                                        | 200       |
+| `GET /api/v1/ready`  | Readiness — PostgreSQL and Redis reachable (5 s timeout each); `/health/ready` is an alias | 200 / 503 |
+
+Readiness body: `{ "status": "ready" | "not_ready", "checks": { "database": {status, latencyMs, code?}, "redis": {…} } }` — status and error codes only, never connection details.
 
 ## Sprint 1 scope (proposal v1.1 §16: "Authentication and foundation")
 
@@ -31,7 +42,7 @@ Roles, user model, OpenID Connect flow, application shell and core CI.
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `feature/project-foundation` | **This branch.** Workspaces, React/Vite, Express/TS, modular layout, lint/format, env handling, app shells, docs |
 | `feature/database-prisma`    | Prisma + Neon (`DATABASE_URL` / `DIRECT_URL`), Role/User/UserIdentity/AuditEvent, first migration, seed          |
-| `feature/backend-core`       | Redis client, session store, rate limiting, health checks for DB and Redis                                       |
+| `feature/backend-core`       | Redis client, session store foundation, rate limiting, CORS, request ids, readiness for DB and Redis             |
 | `feature/auth-oidc`          | `/auth/login`, `/auth/oidc/callback`, `/auth/logout`, `/me`, role guard, CSRF, audit on sign-in                  |
 | `feature/frontend-shell`     | AuthProvider, protected learner/admin routes, sign-in page                                                       |
 | `feature/learner-portal-ui`  | Learner dashboard and profile built from the Figma design                                                        |

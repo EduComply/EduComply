@@ -21,6 +21,7 @@
     "typecheck": "npm run typecheck -w backend && npm run typecheck -w frontend",
     "test": "npm run test -w backend && npm run test -w frontend",
     "test:db": "npm run test:db -w backend",
+    "test:redis": "npm run test:redis -w backend",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
     "db:generate": "npm run db:generate -w backend",
     "db:validate": "npm run db:validate -w backend",
@@ -30,7 +31,10 @@
     "db:seed": "npm run db:seed -w backend",
     "db:inspect": "npm run db:inspect -w backend",
     "db:grant-role": "npm run db:grant-role -w backend --",
-    "db:studio": "npm run db:studio -w backend"
+    "db:studio": "npm run db:studio -w backend",
+    "redis:up": "docker compose up -d redis",
+    "redis:down": "docker compose down",
+    "redis:status": "docker compose ps redis"
   },
   "engines": {
     "node": ">=20.19"

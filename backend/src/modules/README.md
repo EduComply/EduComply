@@ -20,7 +20,7 @@ Repositories take a `DbClient` (Prisma client **or** transaction client) so a us
 
 | Module          | Base path (`/api/v1`)           | Sprint (proposal v1.1) | Status          |
 | --------------- | ------------------------------- | ---------------------- | --------------- |
-| `health`        | `/health`                       | 1                      | Implemented     |
+| `health`        | `/health`, `/ready`             | 1                      | Implemented     |
 | `auth`          | `/auth/*`, `/me`                | 1                      | Next: auth-oidc |
 | `users`         | `/users`                        | 1                      | Data layer done |
 | `audit`         | `/audit-events`                 | 1                      | Data layer done |

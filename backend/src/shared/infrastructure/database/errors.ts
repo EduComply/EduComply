@@ -1,5 +1,5 @@
 import { Prisma } from '../../../generated/prisma/client.js';
-import { HttpError } from '../../http/problem.js';
+import { Errors, HttpError } from '../../http/problem.js';
 
 export class DatabaseNotConfiguredError extends Error {
   constructor() {
@@ -17,42 +17,35 @@ const INSUFFICIENT_PRIVILEGE = '42501';
  */
 export function toHttpError(err: unknown): HttpError | undefined {
   if (err instanceof DatabaseNotConfiguredError) {
-    return new HttpError(503, 'Service Unavailable', 'The database is not configured.');
+    return Errors.serviceUnavailable('The database is not configured.');
   }
 
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     switch (err.code) {
       case 'P2002':
-        return new HttpError(
-          409,
-          'Conflict',
-          'A record with the same unique value already exists.',
-        );
+        return new HttpError(409, 'CONFLICT', 'Conflict', {
+          detail: 'A record with the same unique value already exists.',
+        });
       case 'P2003':
-        return new HttpError(
-          409,
-          'Conflict',
-          'The operation references a related record that does not exist or is still in use.',
-        );
+        return new HttpError(409, 'CONFLICT', 'Conflict', {
+          detail:
+            'The operation references a related record that does not exist or is still in use.',
+        });
       case 'P2025':
-        return new HttpError(404, 'Not Found', 'The requested record was not found.');
+        return Errors.notFound('The requested record was not found.');
       case 'P1001':
       case 'P1002':
       case 'P1008':
       case 'P1017':
       case 'P2024':
-        return new HttpError(
-          503,
-          'Service Unavailable',
-          'The database is temporarily unavailable.',
-        );
+        return Errors.serviceUnavailable('The database is temporarily unavailable.');
       default:
         return undefined;
     }
   }
 
   if (err instanceof Prisma.PrismaClientInitializationError) {
-    return new HttpError(503, 'Service Unavailable', 'The database is temporarily unavailable.');
+    return Errors.serviceUnavailable('The database is temporarily unavailable.');
   }
 
   return undefined;

@@ -1,0 +1,34 @@
+# EduComply local development services.
+# Redis only for now; the full container setup (API, web, CI) is Task 7.
+#
+#   docker compose up -d redis      start
+#   docker compose ps               health status
+#   docker compose down             stop (data is ephemeral)
+#
+# Development only: no password, bound to 127.0.0.1 so it is not reachable from
+# other machines. Production uses a managed Redis via rediss:// in REDIS_URL.
+name: educomply
+
+services:
+  redis:
+    image: redis:8-alpine
+    command:
+      - redis-server
+      - --save
+      - ''
+      - --appendonly
+      - 'no'
+      - --maxmemory
+      - 256mb
+      # Sessions and rate-limit counters must not be silently evicted.
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - '127.0.0.1:6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped

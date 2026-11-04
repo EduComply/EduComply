@@ -1,21 +1,17 @@
 import { Router } from 'express';
-import { checkDatabase } from '../../../shared/infrastructure/database/prisma.js';
-import { getHealth } from '../application/getHealth.js';
+import { healthController, type HealthControllerDeps } from './healthController.js';
 
-export function healthRouter(version: string): Router {
+/**
+ * Mounted at the API root. Paths follow the Initial API Design endpoint catalogue:
+ *   GET /health  liveness
+ *   GET /ready   readiness (PostgreSQL, Redis)
+ * GET /health/ready is kept as an alias of /ready (added in Task 2).
+ */
+export function healthRouter(deps: HealthControllerDeps): Router {
+  const controller = healthController(deps);
   const router = Router();
-
-  // Liveness: the process is running.
-  router.get('/', (_req, res) => {
-    res.json(getHealth(version));
-  });
-
-  // Readiness: dependencies are reachable. 503 when the database is down or not configured.
-  router.get('/ready', async (_req, res) => {
-    const database = await checkDatabase();
-    const ready = database.status === 'up';
-    res.status(ready ? 200 : 503).json({ status: ready ? 'ready' : 'not_ready', database });
-  });
-
+  router.get('/health', controller.liveness);
+  router.get('/ready', controller.readiness);
+  router.get('/health/ready', controller.readiness);
   return router;
 }

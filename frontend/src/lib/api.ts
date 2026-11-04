@@ -1,11 +1,16 @@
 import { config } from '@/config';
 
-/** RFC 9457 problem body returned by the API on errors. */
+/** RFC 9457 problem body returned by the API on errors (Initial API Design §8). */
 export interface Problem {
   type: string;
   title: string;
   status: number;
+  /** Stable machine-readable code, e.g. VALIDATION_FAILED, RATE_LIMITED. */
+  code: string;
   detail?: string;
+  instance?: string;
+  requestId?: string;
+  errors?: { path: string; message: string }[];
 }
 
 export class ApiError extends Error {
@@ -23,7 +28,9 @@ export async function apiGet<T>(path: string, signal?: AbortSignal): Promise<T> 
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as Problem | null;
-    throw new ApiError(body ?? { type: 'about:blank', title: res.statusText, status: res.status });
+    throw new ApiError(
+      body ?? { type: 'about:blank', title: res.statusText, status: res.status, code: 'UNKNOWN' },
+    );
   }
   return (await res.json()) as T;
 }

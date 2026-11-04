@@ -2,6 +2,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, type Prisma } from '../../../generated/prisma/client.js';
 import { env } from '../../../config/env.js';
 import { DatabaseNotConfiguredError } from './errors.js';
+import { errorCode, type DependencyStatus } from '../dependency.js';
 
 /** A Prisma client or an interactive-transaction client; repositories accept either. */
 export type DbClient = PrismaClient | Prisma.TransactionClient;
@@ -45,24 +46,14 @@ export async function disconnectPrisma(): Promise<void> {
   await current.$disconnect();
 }
 
-export interface DatabaseCheck {
-  status: 'up' | 'down' | 'not_configured';
-  latencyMs?: number;
-  /** Error code only (e.g. P1001, ECONNRESET) — never a message or connection detail. */
-  code?: string;
-}
-
 /** Lightweight connectivity probe used by the readiness endpoint and tooling. */
-export async function checkDatabase(): Promise<DatabaseCheck> {
+export async function checkDatabase(): Promise<DependencyStatus> {
   if (!env.DATABASE_URL) return { status: 'not_configured' };
   const started = Date.now();
   try {
     await getPrisma().$queryRaw`SELECT 1`;
     return { status: 'up', latencyMs: Date.now() - started };
   } catch (err) {
-    const e = err as { code?: unknown; errorCode?: unknown; name?: unknown };
-    const code = [e.code, e.errorCode, e.name].find((v) => typeof v === 'string') as
-      string | undefined;
-    return { status: 'down', latencyMs: Date.now() - started, ...(code ? { code } : {}) };
+    return { status: 'down', latencyMs: Date.now() - started, code: errorCode(err) };
   }
 }
