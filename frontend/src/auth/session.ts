@@ -10,7 +10,12 @@ export interface Me {
   email: string;
   roles: Role[];
   userType: string;
+  department: string | null;
+  institutionalId: string | null;
+  isActive: boolean;
   lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
   csrfToken: string;
 }
 

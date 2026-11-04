@@ -1,86 +1,61 @@
-# Figma analysis — "EduComply — Learner Portal (Recreated)"
+# Figma — "EduComply — Learner Portal (Recreated)"
 
-Source: https://www.figma.com/design/G4Tydev3HmM7kr5yGXpogo
+Source: https://www.figma.com/design/G4Tydev3HmM7kr5yGXpogo (page 1, frames `1:2`–`1:11`, each 1440×900).
 
-> **Accuracy note.** The Figma file requires a signed-in session to read frames and styles. This analysis is based on the file's public preview image (10 frames on one page). Screen names, layout and component patterns are reliable; **colour values and typography are approximations**. Replace the values in [frontend/src/styles/tokens.css](../../frontend/src/styles/tokens.css) with the exact Figma styles (Dev Mode → Inspect, or an exported token file) before building pixel-accurate screens.
+**Verified (Task 5).** Values were read through the Figma MCP integration (`get_design_context`, `get_metadata`, screenshots) from the actual layers — exact fills, gradients, font sizes/weights, radii and geometry. The file defines no Figma variables or shared styles, so the tokens in [frontend/src/styles/tokens.css](../../frontend/src/styles/tokens.css) are the literal layer values. Assets (logo, icons, avatar, toggle knob, play icon) were downloaded from the file into `frontend/src/assets/figma/` unchanged.
 
-## Screens in the file
+## Screens → routes
 
-| #   | Screen            | Key content                                                                                                | Route (planned)                   | Sprint |
-| --- | ----------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------- | ------ |
-| 1   | Dashboard         | Welcome banner with CTA, stat tiles, "continue learning" progress card, percentage summary, upcoming items | `/learner/dashboard`              | 2      |
-| 2   | My Training       | Grid of course cards (icon tile, title, progress, primary button)                                          | `/learner/training`               | 2      |
-| 3   | Course player     | Dark video area, course/lesson side panel, progress and action button                                      | `/learner/training/:courseId`     | 3      |
-| 4   | Assessments       | List of assessment cards with status and action buttons                                                    | `/learner/assessments`            | 4      |
-| 5   | Quiz question     | Question text, single-choice options, next/submit button                                                   | `/learner/assessments/:id`        | 4      |
-| 6   | Assessment result | Large score (e.g. 80 %), pass state in green, retry / continue buttons                                     | `/learner/assessments/:id/result` | 4      |
-| 7   | My Progress       | Summary stats and bar chart (red → amber → green by completion)                                            | `/learner/progress`               | 4      |
-| 8   | Profile           | Avatar, name and role, read-only identity details                                                          | `/learner/profile`                | 1      |
-| 9   | Settings          | Preference rows with toggle switches                                                                       | `/learner/settings`               | 6      |
-| 10  | Calendar          | Month grid with due dates, upcoming deadline list                                                          | `/learner/calendar`               | 6      |
+| Frame  | Figma name             | Route                                       | Component                              |
+| ------ | ---------------------- | ------------------------------------------- | -------------------------------------- |
+| `1:2`  | Dashboard              | `/learner/dashboard`                        | `features/learner/pages/DashboardPage` |
+| `1:3`  | My Training            | `/learner/training`                         | `TrainingPage`                         |
+| `1:4`  | Video Learning         | `/learner/training/:courseId`               | `CoursePlayerPage` + `VideoPlayer`     |
+| `1:5`  | Assessments            | `/learner/assessments`                      | `AssessmentsPage`                      |
+| `1:6`  | Interactive Assessment | `/learner/assessments/:assessmentId`        | `QuizPage`                             |
+| `1:7`  | Assessment Results     | `/learner/assessments/:assessmentId/result` | `ResultPage`                           |
+| `1:8`  | My Progress            | `/learner/progress`                         | `ProgressPage`                         |
+| `1:9`  | Profile                | `/learner/profile`                          | `ProfilePage` (real `GET /me` data)    |
+| `1:10` | Settings               | `/learner/settings`                         | `SettingsPage`                         |
+| `1:11` | Calendar               | `/learner/calendar`                         | `CalendarPage`                         |
 
-## Navigation pattern
+The shared frame "Layout / Sidebar + Header" is `components/layout/AppShell`.
 
-- **Left sidebar** (fixed, full height): logo at top, vertical nav list, active item highlighted, action/sign-out at bottom. Dark blue gradient background.
-- **Top bar**: page title on the left; notifications and user avatar on the right.
-- **Content area**: light grey background, white cards on a grid.
-- Implemented as the shared `AppShell` component ([frontend/src/components/layout/AppShell.tsx](../../frontend/src/components/layout/AppShell.tsx)); nav items in [frontend/src/navigation.ts](../../frontend/src/navigation.ts).
+## Verified tokens (excerpt)
 
-## Reusable components identified
+| Element                          | Figma value                                                                         |
+| -------------------------------- | ----------------------------------------------------------------------------------- |
+| Sidebar (236 px)                 | `linear-gradient(97.3deg, #2563eb 12.7%, #1e40af 53.7%, #0f235c 87.3%)`             |
+| Active nav item                  | `#315db1`, 200×48, radius 7; label Inter 16 Bold white                              |
+| Log out button                   | `#2563eb`, radius 8, red logout icon asset                                          |
+| Top bar                          | `#f7f9fc`, height 76; title Inter 24 Bold `#1b2940`                                 |
+| Avatar (small / large)           | `#87a8e0` 34 px, initials 12 Bold `#1f3361` / `#88a9e1` 110 px                      |
+| Welcome banner                   | `#eaf5f1`, radius 18; title 27 Bold `#173e3a`                                       |
+| Summary cards                    | white, radius 16; label 17 Bold; value 30 Bold `#2965e8` / `#19a653` / `#d92d32`    |
+| Primary / success / teal buttons | `#365fa8` / `#16a34a` / `#19a5a2`, height 42, radius 8, label 14 Bold               |
+| Progress (dashboard, quiz)       | track `#e5eefa`, fill `#137f75` (overall `#84c43d`), 9 px, radius 5                 |
+| Course cards                     | thumbnail `#d8eee8` radius 12; track `#94b0e4`, fill `#ff7914` (100%: `#e3292e`)    |
+| Video player                     | `#19283d`, radius 18; selected lesson `#e5eefc`                                     |
+| Assessment pill                  | `#fff0d9` / `#b94c00`, height 32, radius 16                                         |
+| Quiz answers                     | `#f7f9fc`, selected `#e5eefc`, 59 px, radius 10; question 25 Bold                   |
+| Result                           | score 72 Bold `#11833e`, verdict 24 Bold                                            |
+| Chart bars                       | 55 px, radius 7: `#e3292e`, `#f0b900`, `#ff7914`, `#83cf0b`, `#16a34a`              |
+| Calendar                         | day `#ecf3ff` radius 8; training `#2865e8`, deadline `#e47800`, completed `#137e75` |
+| Toggle                           | `#16a34a`, 64×30, radius 18, white knob asset                                       |
+| Typography                       | Inter (self-hosted via `@fontsource/inter`), Regular 400 / Bold 700                 |
 
-| Component                   | Used on                          | Notes                                                          |
-| --------------------------- | -------------------------------- | -------------------------------------------------------------- |
-| `AppShell`                  | all screens                      | Sidebar + top bar + content outlet (**built**)                 |
-| `Sidebar` / `NavItem`       | all screens                      | Active state, icon + label                                     |
-| `Topbar`                    | all screens                      | Title, notifications, avatar menu                              |
-| `Card`                      | all screens                      | White, rounded, subtle shadow (**CSS built**)                  |
-| `Button`                    | all screens                      | Primary (blue), accent (teal/green), secondary (**CSS built**) |
-| `StatTile`                  | Dashboard, Progress, Assessments | Label, large value, optional delta                             |
-| `ProgressBar`               | Dashboard, Training, Player      | Linear, percentage label                                       |
-| `CourseCard`                | Training, Dashboard              | Icon tile, title, meta, progress, CTA                          |
-| `Badge`                     | Assessments, Result              | Pass / fail / pending (**CSS built**)                          |
-| `ScoreRing` / score display | Result, Dashboard                | Large % with pass colour                                       |
-| `OptionList` (radio)        | Quiz                             | Keyboard-accessible single choice                              |
-| `BarChart`                  | Progress                         | Colour by completion band                                      |
-| `Toggle`                    | Settings                         | Accessible switch (`role="switch"`)                            |
-| `CalendarMonth`             | Calendar                         | Month grid with markers                                        |
-| `Avatar`                    | Top bar, Profile                 | Initials fallback                                              |
+## Deliberate deviations from the frames
 
-## Design tokens (approximate)
+- **Layout is responsive**, not absolutely positioned: grids and flex reproduce the 1440 px frames; below 960 px the sidebar becomes an off-canvas drawer (menu button, Escape to close, focus return).
+- **Demonstration labels** are added on screens whose data belongs to later sprints (courses, progress, assessments, calendar). Nothing is persisted.
+- **Video player** adds controls (play/pause, seek, time, mute, captions, speed, full screen) and a "Prototype video · progress not tracked" label; the frame shows only a play icon.
+- **Quiz** adds Previous and question-number navigation and a Submit step; **Result** adds an answer review.
+- **Profile** fields are read-only values from `GET /me`; "Edit Profile" is disabled (identity data comes from the institution). Institution and phone are not collected, so the grid shows User type, Department, Learner ID, Last sign-in, Account status and Member since.
+- **Settings → Change password**: no password fields — passwords belong to the identity provider (Keycloak), so the section explains that instead of showing inputs that could not work. Toggles are clearly marked "not saved yet".
+- **Header** "Search" links to My Training search; "Notifications" opens an honest "No notifications" panel.
+- **Course card colour for 100%** follows Figma (red `#e3292e`) although red usually signals a problem — flagged for design review.
+- Figma node `1-12` from the shared link does not exist in the file; the ten learner frames are `1:2`–`1:11`.
 
-| Token                  | Value                             | Use                                |
-| ---------------------- | --------------------------------- | ---------------------------------- |
-| `--ec-navy-800/900`    | `#1e3a8a` → `#0f1f5c`             | Sidebar gradient, brand            |
-| `--ec-blue-600`        | `#2563eb`                         | Primary buttons, links, focus ring |
-| `--ec-teal-500`        | `#14b8a6`                         | Accent buttons, course icon tiles  |
-| `--ec-success`         | `#16a34a`                         | Pass score, completed, toggles on  |
-| `--ec-warning`         | `#f59e0b`                         | Mid progress                       |
-| `--ec-danger`          | `#dc2626`                         | Low progress, fail                 |
-| `--ec-bg`              | `#f5f7fb`                         | Page background                    |
-| `--ec-surface`         | `#ffffff`                         | Cards                              |
-| `--ec-text` / `-muted` | `#0f172a` / `#64748b`             | Body / secondary text              |
-| Font                   | Inter, system sans-serif fallback | To confirm in Figma                |
-| Type scale             | 12 / 14 / 16 / 18 / 24 / 32 px    | Labels → page headings             |
-| Radius                 | 6 / 10 / 14 px                    | Inputs & buttons / tiles / cards   |
+## Admin portal
 
-## Admin portal plan (not in Figma — to be designed)
-
-The admin portal reuses the same `AppShell`, tokens and components so both portals read as one product. Differences: an "Admin" label in the sidebar footer and denser data tables.
-
-| Screen            | Route                   | Sprint | New components needed                                           |
-| ----------------- | ----------------------- | ------ | --------------------------------------------------------------- |
-| Overview          | `/admin/dashboard`      | 1      | `StatTile`, recent activity list                                |
-| Users & Roles     | `/admin/users`          | 1      | `DataTable`, `RoleSelect`, confirm dialog with reason (audited) |
-| Audit Log         | `/admin/audit`          | 1      | `DataTable`, filters                                            |
-| Courses           | `/admin/courses`        | 2      | Course form, version list                                       |
-| Question Banks    | `/admin/question-banks` | 2      | Question editor                                                 |
-| Enrolments        | `/admin/enrolments`     | 2      | Assignment picker                                               |
-| Monitoring Review | `/admin/monitoring`     | 5      | Flag detail, decision + reason                                  |
-| Certificates      | `/admin/certificates`   | 5      | Revoke dialog                                                   |
-| Reports           | `/admin/reports`        | 6      | Filter bar, CSV/PDF export                                      |
-
-Next step for design: create the admin frames in the same Figma file (or a sibling page) using these tokens, starting with Overview, Users & Roles and Audit Log for Sprint 1.
-
-## Accessibility requirements carried into components (proposal §14.3)
-
-Visible focus ring on every interactive element, keyboard-operable nav/quiz/toggles, labelled controls, WCAG AA contrast (check teal-on-white text — use teal for fills, not small text), captions for video.
+Not in Figma. It reuses `AppShell`, tokens and components; its screens are placeholders until later tasks and are restricted to ADMIN and REVIEWER.

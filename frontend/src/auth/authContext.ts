@@ -4,7 +4,8 @@ import type { Me } from './session';
 export type AuthState =
   | { status: 'loading' }
   | { status: 'authenticated'; user: Me }
-  | { status: 'anonymous' }
+  /** expired: the user was signed in during this visit and the server session ended. */
+  | { status: 'anonymous'; expired?: boolean }
   | { status: 'error' };
 
 interface AuthContextValue {

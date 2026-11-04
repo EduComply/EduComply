@@ -7,3 +7,4 @@ package-lock.json
 .env.*
 backend/src/generated
 backend/prisma/migrations/**/*.sql
+.vscode/settings.json

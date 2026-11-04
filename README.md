@@ -8,7 +8,7 @@ EduComply delivers mandatory compliance training (IT security, harassment preven
 
 | Layer    | Technology                                                                        |
 | -------- | --------------------------------------------------------------------------------- |
-| Frontend | React 19, TypeScript, Vite, React Router                                          |
+| Frontend | React 19, TypeScript, Vite, React Router, Inter (self-hosted)                     |
 | Backend  | Node.js, Express 5, TypeScript, Zod, Pino — modular monolith (Clean Architecture) |
 | Data     | Neon PostgreSQL, Prisma 7 (pg driver adapter), Redis 8 (node-redis)               |
 | Identity | OpenID Connect via backend-for-frontend session _(Sprint 1)_                      |
@@ -216,8 +216,17 @@ All configuration lives in a single `.env` at the repository root; see [.env.exa
 3. API changes follow the Initial API Design (`/api/v1`, RFC 9457 errors).
 4. Never commit `.env`, keys, credentials or real learner data.
 
+## Learner portal (Task 5)
+
+Ten learner screens implemented from the Figma file (frames `1:2`–`1:11`) with verified design tokens — see [docs/design/figma-learner-portal.md](docs/design/figma-learner-portal.md).
+
+- All `/learner/*` routes require a valid session (`RequireAuth` reads `GET /api/v1/me`); expired sessions are detected when the tab regains focus. `/admin/*` additionally requires ADMIN or REVIEWER.
+- Real data: the signed-in user (name, email, roles, profile fields) and sign-in/sign-out.
+- **Demonstration data** (labelled on every screen, never persisted): courses, progress, assessments, quiz scoring and calendar — their APIs arrive in Sprints 2–4.
+- The Course Player plays a local synthetic sample video (`frontend/public/media/`) with captions. It is a prototype: seeking is unrestricted and viewing is not tracked or validated (Sprint 3).
+
 ## Documentation
 
 - [docs/architecture.md](docs/architecture.md) — modular monolith, module map, Sprint 1 branch plan
-- [docs/design/figma-learner-portal.md](docs/design/figma-learner-portal.md) — Figma analysis, design tokens, learner and admin portal structure
+- [docs/design/figma-learner-portal.md](docs/design/figma-learner-portal.md) — verified Figma tokens, screen→route map and deliberate deviations
 - [backend/src/modules/README.md](backend/src/modules/README.md) — module layering rules

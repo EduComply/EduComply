@@ -3,6 +3,7 @@ import { useAuth } from '@/auth/authContext';
 import { loginUrl } from '@/auth/session';
 import { ApiStatus } from '@/components/ApiStatus';
 import { config } from '@/config';
+import logo from '@/assets/figma/educomply-logo.png';
 
 /** Messages for ?authError=<code> set by the API after a failed sign-in (no details exposed). */
 const AUTH_ERRORS: Record<string, string> = {
@@ -26,6 +27,9 @@ export function LandingPage() {
   return (
     <div className="landing">
       <section className="card">
+        <div className="landing-logo-wrap">
+          <img className="landing-logo" src={logo} alt="" width={213} height={71} />
+        </div>
         <h1>{config.appName}</h1>
         <p className="muted">Institutional video training and interactive assessment platform</p>
         {authError && (
@@ -36,9 +40,14 @@ export function LandingPage() {
         <ApiStatus />
         <div className="landing-actions">
           {signedIn ? (
-            <p>
-              Signed in as <strong>{signedIn.displayName}</strong> ({signedIn.roles.join(', ')})
-            </p>
+            <>
+              <p>
+                Signed in as <strong>{signedIn.displayName}</strong> ({signedIn.roles.join(', ')})
+              </p>
+              <Link to="/learner/dashboard" className="btn btn-primary">
+                Go to learner portal
+              </Link>
+            </>
           ) : (
             <a href={loginUrl('/learner')} className="btn btn-primary">
               Sign in with institutional account

@@ -2,19 +2,29 @@ export interface NavItem {
   /** Path relative to the portal root, e.g. "training" → /learner/training */
   path: string;
   label: string;
-  /** Sprint (proposal v1.1) in which the screen becomes functional. */
+  /** Sprint (proposal v1.1) in which the screen's data becomes real (backend APIs). */
   sprint: number;
 }
 
-/** Learner navigation — mirrors the sidebar in the Figma learner portal. */
+/** Learner navigation — order and labels from the Figma sidebar (frames 1:2–1:11). */
 export const learnerNav: NavItem[] = [
   { path: 'dashboard', label: 'Dashboard', sprint: 2 },
   { path: 'training', label: 'My Training', sprint: 2 },
   { path: 'assessments', label: 'Assessments', sprint: 4 },
   { path: 'progress', label: 'My Progress', sprint: 4 },
-  { path: 'calendar', label: 'Calendar', sprint: 6 },
   { path: 'profile', label: 'Profile', sprint: 1 },
   { path: 'settings', label: 'Settings', sprint: 6 },
+  { path: 'calendar', label: 'Calendar', sprint: 6 },
+];
+
+/**
+ * Top-bar titles for nested learner pages (Figma frame titles). The sidebar keeps the
+ * parent section active, e.g. the course player highlights "My Training".
+ */
+export const learnerPageTitles: Array<{ pattern: RegExp; title: string }> = [
+  { pattern: /^\/learner\/training\/[^/]+$/, title: 'Video Learning' },
+  { pattern: /^\/learner\/assessments\/[^/]+\/result$/, title: 'Assessment Results' },
+  { pattern: /^\/learner\/assessments\/[^/]+$/, title: 'Interactive Assessment' },
 ];
 
 /** Admin navigation — new portal, styled to match the learner design. */

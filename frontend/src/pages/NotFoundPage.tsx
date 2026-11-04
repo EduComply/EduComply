@@ -1,15 +1,23 @@
 import { Link } from 'react-router-dom';
+import { EmptyState } from '@/components/ui';
 
-export function NotFoundPage() {
+/** 404. `embedded` renders inside a portal shell instead of a full page. */
+export function NotFoundPage({ embedded = false }: { embedded?: boolean }) {
+  const body = (
+    <EmptyState
+      title="Page not found"
+      message="The page you requested does not exist."
+      action={
+        <Link to={embedded ? '/learner/dashboard' : '/'} className="btn btn-primary">
+          {embedded ? 'Go to dashboard' : 'Go home'}
+        </Link>
+      }
+    />
+  );
+  if (embedded) return body;
   return (
     <div className="landing">
-      <section className="card">
-        <h1>Page not found</h1>
-        <p className="muted">The page you requested does not exist.</p>
-        <Link to="/" className="btn btn-primary">
-          Go home
-        </Link>
-      </section>
+      <section className="card">{body}</section>
     </div>
   );
 }
