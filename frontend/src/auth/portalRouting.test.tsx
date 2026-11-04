@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe('sign-in entry point', () => {
-  it('the landing page signs in without a fixed portal (the server picks it by role)', async () => {
+  it('the welcome page offers only "Sign in" (no portal choice; the server picks it by role)', async () => {
     mockFetch({
       '/api/v1/me': () => json(401, { code: 'UNAUTHENTICATED', status: 401, title: 'x' }),
       '/api/v1/health': () => json(200, { status: 'ok', version: '0.1.0' }),
@@ -39,16 +39,43 @@ describe('sign-in entry point', () => {
     renderApp('/');
     const link = await screen.findByRole('link', { name: 'Sign in with institutional account' });
     expect(link.getAttribute('href')).toBe('/api/v1/auth/login');
+    expect(screen.getAllByRole('link').map((l) => l.textContent)).toEqual([
+      'Sign in with institutional account',
+    ]);
+    expect(screen.queryByRole('link', { name: 'Learner portal' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Admin portal' })).toBeNull();
   });
 
-  it('a signed-in administrator is offered the admin portal on the landing page', async () => {
+  it('while the session is checked, the welcome page does not offer sign-in yet', async () => {
+    let release!: (r: Response) => void;
     mockFetch({
-      '/api/v1/me': () => json(200, ADMIN),
+      '/api/v1/me': () => new Promise<Response>((r) => (release = r)),
       '/api/v1/health': () => json(200, { status: 'ok', version: '0.1.0' }),
     });
     renderApp('/');
-    const link = await screen.findByRole('link', { name: 'Go to admin portal' });
-    expect(link.getAttribute('href')).toBe('/admin/dashboard');
+    expect(screen.getByText('Checking your session…')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Sign in with institutional account' })).toBeNull();
+    release(json(200, ME));
+    expect(await screen.findByRole('link', { name: 'Go to dashboard' })).toBeTruthy();
+  });
+
+  it.each([
+    ['administrator', ADMIN, '/admin/dashboard'],
+    ['learner', ME, '/learner/dashboard'],
+    [
+      'reviewer',
+      { ...ADMIN, roles: ['REVIEWER'], portals: ['admin'], homePath: '/admin/dashboard' } as Me,
+      '/admin/dashboard',
+    ],
+  ])('a signed-in %s gets one "Go to dashboard" action to their home page', async (_, me, home) => {
+    mockFetch({
+      '/api/v1/me': () => json(200, me),
+      '/api/v1/health': () => json(200, { status: 'ok', version: '0.1.0' }),
+    });
+    renderApp('/');
+    const link = await screen.findByRole('link', { name: 'Go to dashboard' });
+    expect(link.getAttribute('href')).toBe(home);
+    expect(screen.getAllByRole('link').map((l) => l.textContent)).toEqual(['Go to dashboard']);
   });
 });
 

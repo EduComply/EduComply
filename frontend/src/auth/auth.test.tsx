@@ -55,7 +55,9 @@ describe('authenticated portal', () => {
     });
     renderApp('/');
     expect(await screen.findByText('Lea Learner')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Go to learner portal' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Go to dashboard' }).getAttribute('href')).toBe(
+      '/learner/dashboard',
+    );
     expect(screen.queryByRole('link', { name: /Sign in with institutional account/ })).toBeNull();
   });
 });

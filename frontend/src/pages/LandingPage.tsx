@@ -38,6 +38,8 @@ export function LandingPage() {
           </p>
         )}
         <ApiStatus />
+        {/* One action only. The portal is never chosen here: after Keycloak the server sends
+            each user to the portal of their database role (GET /me → homePath). */}
         <div className="landing-actions">
           {signedIn ? (
             <>
@@ -45,23 +47,19 @@ export function LandingPage() {
                 Signed in as <strong>{signedIn.displayName}</strong> ({signedIn.roles.join(', ')})
               </p>
               <Link to={signedIn.homePath} className="btn btn-primary">
-                {signedIn.portals.includes('admin') ? 'Go to admin portal' : 'Go to learner portal'}
+                Go to dashboard
               </Link>
             </>
+          ) : state.status === 'loading' ? (
+            // Avoid offering sign-in to someone who is already signed in.
+            <p className="muted" role="status">
+              Checking your session…
+            </p>
           ) : (
-            // No fixed returnTo: the server picks the portal for the user's role.
             <a href={loginUrl()} className="btn btn-primary">
               Sign in with institutional account
             </a>
           )}
-        </div>
-        <div className="landing-actions">
-          <Link to="/learner" className="btn btn-secondary">
-            Learner portal
-          </Link>
-          <Link to="/admin" className="btn btn-secondary">
-            Admin portal
-          </Link>
         </div>
       </section>
     </div>
