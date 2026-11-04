@@ -20,7 +20,17 @@
     "format:check": "prettier . --check",
     "typecheck": "npm run typecheck -w backend && npm run typecheck -w frontend",
     "test": "npm run test -w backend && npm run test -w frontend",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build"
+    "test:db": "npm run test:db -w backend",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
+    "db:generate": "npm run db:generate -w backend",
+    "db:validate": "npm run db:validate -w backend",
+    "db:status": "npm run db:status -w backend",
+    "db:migrate:deploy": "npm run db:migrate:deploy -w backend",
+    "db:migrate:create": "npm run db:migrate:create -w backend",
+    "db:seed": "npm run db:seed -w backend",
+    "db:inspect": "npm run db:inspect -w backend",
+    "db:grant-role": "npm run db:grant-role -w backend --",
+    "db:studio": "npm run db:studio -w backend"
   },
   "engines": {
     "node": ">=20.19"

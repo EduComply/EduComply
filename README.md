@@ -10,7 +10,7 @@ EduComply delivers mandatory compliance training (IT security, harassment preven
 | -------- | --------------------------------------------------------------------------------- |
 | Frontend | React 19, TypeScript, Vite, React Router                                          |
 | Backend  | Node.js, Express 5, TypeScript, Zod, Pino — modular monolith (Clean Architecture) |
-| Data     | Neon PostgreSQL + Prisma _(next branch)_, Redis _(Sprint 1)_                      |
+| Data     | Neon PostgreSQL, Prisma 7 (pg driver adapter), Redis _(Sprint 1)_                 |
 | Identity | OpenID Connect via backend-for-frontend session _(Sprint 1)_                      |
 | Quality  | ESLint, Prettier, Vitest, Supertest                                               |
 
@@ -22,10 +22,14 @@ EduComply/
 │   ├── src/
 │   │   ├── config/env.ts    validated environment configuration
 │   │   ├── modules/         one folder per business module (see modules/README.md)
-│   │   ├── shared/          logger, HTTP error model (RFC 9457)
+│   │   ├── shared/          logger, HTTP error model (RFC 9457), database client
+│   │   ├── generated/       Prisma Client (generated, git-ignored)
 │   │   ├── app.ts           Express app factory
 │   │   └── server.ts        process entry point
-│   └── tests/               Vitest + Supertest
+│   ├── prisma/              schema.prisma, migrations/, seed.ts
+│   ├── scripts/             db-inspect, grant-role (development tools)
+│   ├── prisma.config.ts     Prisma CLI configuration
+│   └── tests/               Vitest + Supertest (tests/db = database integration)
 ├── frontend/                React app  (@educomply/frontend)
 │   └── src/
 │       ├── components/      shared UI and layout (AppShell)
@@ -52,32 +56,63 @@ git clone https://github.com/EduComply/EduComply.git
 cd EduComply
 npm install
 
-# Create your local environment file (never commit it)
+# Create your local environment file (never commit it), then fill in the Neon URLs
 cp .env.example .env              # PowerShell: Copy-Item .env.example .env
 
+npm run db:migrate:deploy         # apply committed migrations (non-destructive)
+npm run db:seed                   # create LEARNER / ADMIN / REVIEWER roles (idempotent)
 npm run dev
 ```
 
 - Frontend: http://localhost:5173
-- API: http://localhost:3000/api/v1/health (also proxied at http://localhost:5173/api/v1/health)
+- API liveness: http://localhost:3000/api/v1/health (also proxied at http://localhost:5173/api/v1/health)
+- API readiness (database): http://localhost:3000/api/v1/health/ready — `200` when PostgreSQL is reachable, `503` otherwise
 
 The landing page shows **API: online** when the frontend can reach the backend.
 
 ## Scripts (run from the repository root)
 
-| Command                | Purpose                                                               |
-| ---------------------- | --------------------------------------------------------------------- |
-| `npm run dev`          | Backend (tsx watch) and frontend (Vite) together                      |
-| `npm run dev:backend`  | Backend only                                                          |
-| `npm run dev:frontend` | Frontend only                                                         |
-| `npm run build`        | Compile backend to `backend/dist`, bundle frontend to `frontend/dist` |
-| `npm start`            | Run the compiled backend                                              |
-| `npm run lint`         | ESLint (zero warnings allowed)                                        |
-| `npm run format`       | Prettier write                                                        |
-| `npm run format:check` | Prettier check                                                        |
-| `npm run typecheck`    | `tsc --noEmit` in both workspaces                                     |
-| `npm test`             | Vitest in both workspaces                                             |
-| `npm run check`        | Format check, lint, typecheck, test and build                         |
+| Command                | Purpose                                                                   |
+| ---------------------- | ------------------------------------------------------------------------- |
+| `npm run dev`          | Backend (tsx watch) and frontend (Vite) together                          |
+| `npm run dev:backend`  | Backend only                                                              |
+| `npm run dev:frontend` | Frontend only                                                             |
+| `npm run build`        | Compile backend to `backend/dist`, bundle frontend to `frontend/dist`     |
+| `npm start`            | Run the compiled backend                                                  |
+| `npm run lint`         | ESLint (zero warnings allowed)                                            |
+| `npm run format`       | Prettier write                                                            |
+| `npm run format:check` | Prettier check                                                            |
+| `npm run typecheck`    | `tsc --noEmit` in both workspaces                                         |
+| `npm test`             | Unit and HTTP tests in both workspaces (no database needed)               |
+| `npm run test:db`      | Database integration tests (needs `DATABASE_URL`; all writes rolled back) |
+| `npm run check`        | Format check, lint, typecheck, test and build                             |
+
+## Database (Neon PostgreSQL + Prisma)
+
+| Command                     | Purpose                                                                       |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| `npm run db:validate`       | Validate `backend/prisma/schema.prisma`                                       |
+| `npm run db:generate`       | Generate Prisma Client (also runs before dev, build, typecheck, test)         |
+| `npm run db:inspect`        | Read-only: list tables and row counts (no connection details printed)         |
+| `npm run db:status`         | Show applied / pending migrations                                             |
+| `npm run db:migrate:deploy` | Apply pending committed migrations. Never resets or drops data                |
+| `npm run db:migrate:create` | Author a new migration from schema changes (review the SQL before committing) |
+| `npm run db:seed`           | Idempotently create the LEARNER, ADMIN and REVIEWER roles                     |
+| `npm run db:grant-role`     | Development only: grant a role to a signed-in test user (audited)             |
+| `npm run db:studio`         | Browse data in Prisma Studio                                                  |
+
+- The app uses the **pooled** `DATABASE_URL`; Prisma CLI (migrations, studio) uses the **direct** `DIRECT_URL` ([backend/prisma.config.ts](backend/prisma.config.ts)).
+- Never run `prisma migrate reset` or `prisma db push --force-reset` against the shared Neon database.
+- The seed creates **no users or passwords**. Users are created when they first sign in through the identity provider (Sprint 1 auth task).
+
+### Granting the ADMIN role to a test user (development only)
+
+1. The person signs in once through the institutional/test identity provider, which creates their user and links a verified identity.
+2. A developer runs:
+   ```bash
+   npm run db:grant-role -- --email person@uni.ac.lk --role ADMIN --reason "Sprint 1 demo administrator"
+   ```
+3. The script refuses to run when `NODE_ENV=production`, refuses users without a linked identity, and writes a `user.role_changed` audit event in the same transaction. Running it again is a no-op.
 
 ## Environment variables
 

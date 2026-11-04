@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { logger } from '../logger.js';
+import { databaseErrorCode, toHttpError } from '../infrastructure/database/errors.js';
 import { HttpError } from './problem.js';
 
 const PROBLEM_JSON = 'application/problem+json';
@@ -11,6 +12,14 @@ export const notFoundHandler: RequestHandler = (req, _res, next) => {
 export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err instanceof HttpError) {
     res.status(err.status).type(PROBLEM_JSON).json(err.toProblem(req.originalUrl));
+    return;
+  }
+
+  // Database errors: log the code only (messages can contain hosts or values).
+  const dbError = toHttpError(err);
+  if (dbError) {
+    logger.warn({ dbCode: databaseErrorCode(err), status: dbError.status }, 'Database error');
+    res.status(dbError.status).type(PROBLEM_JSON).json(dbError.toProblem(req.originalUrl));
     return;
   }
 

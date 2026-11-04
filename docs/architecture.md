@@ -47,3 +47,23 @@ Out of scope for Sprint 1: courses, playback, quizzes, monitoring, certificates,
 | LEARNER  | Own enrolments, playback, attempts, certificates |
 | ADMIN    | Content, users, enrolments, settings             |
 | REVIEWER | Monitoring flag review, reports, audit           |
+
+## Sprint 1 data model (Task 2)
+
+Source: ER diagram "User & Authentication"; audit fields from API Design §9. Tables use the ER's snake_case names.
+
+```
+role (id smallint PK, name UK, description)
+  1 ──< user (id uuid PK, role_id FK, email UK, full_name, institutional_id UK?, user_type, department?,
+              is_active, last_login_at?, created_at, updated_at)
+          1 ──< user_identity (id uuid PK, user_id FK → cascade, protocol OIDC|SAML,
+                               (issuer, subject) UK, linked_at, last_used_at?)
+          1 ──< audit_event.actor_id (nullable, FK → restrict)
+audit_event (id bigint PK, actor_id?, action, target_type?, target_id?, reason?, metadata jsonb?,
+             request_id?, ip_hash char(64)?, occurred_at)   — append-only (DB trigger blocks UPDATE/DELETE/TRUNCATE)
+```
+
+- **One role per user**, as in the ER diagram (`USER.role_id`). New users default to LEARNER.
+- **Identity linkage**: an external account is identified by `(issuer, subject)`; one user may have several identities (OIDC now, SAML later).
+- **Audit**: written in the same transaction as the change; IPs are stored only as SHA-256 hashes; users referenced by audit events cannot be deleted.
+- **Connections**: runtime → pooled `DATABASE_URL` via `@prisma/adapter-pg`; Prisma CLI → direct `DIRECT_URL`.

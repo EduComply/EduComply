@@ -15,6 +15,7 @@ node_modules/
 .pnpm-store/
 
 # ── Build output ───────────────────────────────────────────────────
+backend/src/generated/
 dist/
 build/
 *.tsbuildinfo

@@ -12,7 +12,9 @@ The API is a **modular monolith**: one deployable Express app, with each busines
 
 Dependencies point inwards only: `presentation → application → domain`. `infrastructure` implements ports from `application`. Modules talk to each other through application-layer functions, never by reaching into another module's infrastructure or database tables.
 
-Shared cross-cutting code lives in `src/shared/` (logger, HTTP errors, later: auth middleware, audit writer).
+Shared cross-cutting code lives in `src/shared/` (logger, HTTP errors, Prisma client in `shared/infrastructure/database`, later: auth middleware).
+
+Repositories take a `DbClient` (Prisma client **or** transaction client) so a use case can write a change and its audit event in one transaction.
 
 ## Module map
 
@@ -20,8 +22,8 @@ Shared cross-cutting code lives in `src/shared/` (logger, HTTP errors, later: au
 | --------------- | ------------------------------- | ---------------------- | --------------- |
 | `health`        | `/health`                       | 1                      | Implemented     |
 | `auth`          | `/auth/*`, `/me`                | 1                      | Next: auth-oidc |
-| `users`         | `/users`                        | 1                      | Next: auth-oidc |
-| `audit`         | `/audit-events`                 | 1                      | Next: auth-oidc |
+| `users`         | `/users`                        | 1                      | Data layer done |
+| `audit`         | `/audit-events`                 | 1                      | Data layer done |
 | `courses`       | `/courses`, `/course-versions`  | 2                      | Planned         |
 | `question-bank` | `/question-banks`               | 2                      | Planned         |
 | `enrolments`    | `/enrolments`, `/me/enrolments` | 2                      | Planned         |
