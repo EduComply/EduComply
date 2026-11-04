@@ -16,11 +16,15 @@ let client: PrismaClient | undefined;
 export function getPrisma(): PrismaClient {
   if (!client) {
     if (!env.DATABASE_URL) throw new DatabaseNotConfiguredError();
+    // Bounded timeouts so a blocked or sleeping Neon endpoint fails fast instead of hanging.
+    // TLS stays on (sslmode from DATABASE_URL; pg verifies the certificate).
     const adapter = new PrismaPg({
       connectionString: env.DATABASE_URL,
       max: 10,
-      connectionTimeoutMillis: 10_000,
+      connectionTimeoutMillis: 10_000, // new connection (DNS + TCP + TLS + auth)
       idleTimeoutMillis: 30_000,
+      query_timeout: 30_000, // client-side cap per query
+      keepAlive: true, // detect dropped connections behind NAT/firewalls
     });
     client = new PrismaClient({
       adapter,
@@ -33,6 +37,9 @@ export function getPrisma(): PrismaClient {
             ? ['warn', 'error']
             : ['error'],
       errorFormat: 'minimal',
+      // Prisma's default maxWait (2 s) is too short for a Neon compute waking from suspend
+      // and caused "Unable to start a transaction in the given time". Both stay bounded.
+      transactionOptions: { maxWait: 10_000, timeout: 20_000 },
     });
   }
   return client;

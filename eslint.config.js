@@ -29,6 +29,15 @@ export default tseslint.config(
     },
   },
 
+  // Development tooling (Node.js)
+  {
+    files: ['tools/**/*.ts'],
+    languageOptions: { globals: globals.node },
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    },
+  },
+
   // Frontend: browser + React
   {
     files: ['frontend/**/*.{ts,tsx}'],

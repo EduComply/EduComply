@@ -59,13 +59,14 @@ npm install
 # Create your local environment file (never commit it), then fill in the Neon URLs
 cp .env.example .env              # PowerShell: Copy-Item .env.example .env
 
-npm run redis:up                  # local Redis in Docker (needs Docker Desktop running)
 npm run auth:init-env             # once: adds Keycloak/OIDC dev settings + random secrets to .env
-npm run keycloak:up               # local Keycloak (first start pulls ~450 MB and imports the realm)
-npm run db:migrate:deploy         # apply committed migrations (non-destructive)
+npm run dev:deps                  # Redis + Keycloak in Docker, waits until healthy (Docker Desktop must run)
+npm run db:migrate:deploy         # apply committed migrations (non-destructive; needs port 5432 to Neon)
 npm run db:seed                   # create LEARNER / ADMIN / REVIEWER roles (idempotent)
-npm run dev
+npm run dev                       # preflight checks, then frontend + backend; Ctrl+C stops both
 ```
+
+Trouble starting? Run `npm run dev:doctor` — it diagnoses ports, Docker, Redis, Keycloak and Neon without changing anything. See [docs/development.md](docs/development.md).
 
 - Frontend: http://localhost:5173
 - API liveness: http://localhost:3000/api/v1/health (also proxied at http://localhost:5173/api/v1/health)
@@ -75,25 +76,29 @@ The landing page shows **API: online** when the frontend can reach the backend.
 
 ## Scripts (run from the repository root)
 
-| Command                 | Purpose                                                                   |
-| ----------------------- | ------------------------------------------------------------------------- |
-| `npm run dev`           | Backend (tsx watch) and frontend (Vite) together                          |
-| `npm run dev:backend`   | Backend only                                                              |
-| `npm run dev:frontend`  | Frontend only                                                             |
-| `npm run build`         | Compile backend to `backend/dist`, bundle frontend to `frontend/dist`     |
-| `npm start`             | Run the compiled backend                                                  |
-| `npm run lint`          | ESLint (zero warnings allowed)                                            |
-| `npm run format`        | Prettier write                                                            |
-| `npm run format:check`  | Prettier check                                                            |
-| `npm run typecheck`     | `tsc --noEmit` in both workspaces                                         |
-| `npm test`              | Unit and HTTP tests in both workspaces (no database needed)               |
-| `npm run test:db`       | Database integration tests (needs `DATABASE_URL`; all writes rolled back) |
-| `npm run test:redis`    | Live Redis tests (needs Redis at `REDIS_URL`; test keys deleted)          |
-| `npm run test:keycloak` | Live OIDC tests (needs Keycloak + Redis; temporary Keycloak user removed) |
-| `npm run redis:up`      | Start local Redis (`docker compose up -d redis`)                          |
-| `npm run redis:status`  | Show Redis container health                                               |
-| `npm run redis:down`    | Stop local services                                                       |
-| `npm run check`         | Format check, lint, typecheck, test and build                             |
+| Command                 | Purpose                                                                                             |
+| ----------------------- | --------------------------------------------------------------------------------------------------- |
+| `npm run dev`           | Preflight (env, ports, Docker, Redis, Keycloak, Neon), then frontend + backend under one supervisor |
+| `npm run dev:backend`   | Same, backend only (frontend: `npm run dev:frontend`)                                               |
+| `npm run dev:doctor`    | Read-only diagnosis of the whole environment                                                        |
+| `npm run dev:deps`      | Start Redis + Keycloak (project `educomply` only) and wait until healthy                            |
+| `npm run dev:deps:stop` | Stop this project's containers (volumes kept; other projects untouched)                             |
+| `npm run dev:stop`      | Stop EduComply dev servers started by `npm run dev` (and their orphans)                             |
+| `npm run dev:health`    | Check a running app: liveness, readiness, frontend and proxy                                        |
+| `npm run build`         | Compile backend to `backend/dist`, bundle frontend to `frontend/dist`                               |
+| `npm start`             | Run the compiled backend                                                                            |
+| `npm run lint`          | ESLint (zero warnings allowed)                                                                      |
+| `npm run format`        | Prettier write                                                                                      |
+| `npm run format:check`  | Prettier check                                                                                      |
+| `npm run typecheck`     | `tsc --noEmit` in both workspaces                                                                   |
+| `npm test`              | Unit and HTTP tests in both workspaces + dev-tooling tests (no services needed)                     |
+| `npm run test:db`       | Database integration tests (needs `DATABASE_URL`; all writes rolled back)                           |
+| `npm run test:redis`    | Live Redis tests (needs Redis at `REDIS_URL`; test keys deleted)                                    |
+| `npm run test:keycloak` | Live OIDC tests (needs Keycloak + Redis; temporary Keycloak user removed)                           |
+| `npm run redis:up`      | Start local Redis (`docker compose up -d redis`)                                                    |
+| `npm run redis:status`  | Show Redis container health                                                                         |
+| `npm run redis:down`    | Stop the Redis container (data is ephemeral; nothing removed)                                       |
+| `npm run check`         | Format check, lint, typecheck, test and build                                                       |
 
 ## API conventions
 
@@ -227,6 +232,7 @@ Ten learner screens implemented from the Figma file (frames `1:2`–`1:11`) with
 
 ## Documentation
 
+- [docs/development.md](docs/development.md) — dev workflow, port/Docker conflicts, Neon connectivity, demo runbook
 - [docs/architecture.md](docs/architecture.md) — modular monolith, module map, Sprint 1 branch plan
 - [docs/design/figma-learner-portal.md](docs/design/figma-learner-portal.md) — verified Figma tokens, screen→route map and deliberate deviations
 - [backend/src/modules/README.md](backend/src/modules/README.md) — module layering rules

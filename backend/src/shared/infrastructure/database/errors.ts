@@ -33,11 +33,13 @@ export function toHttpError(err: unknown): HttpError | undefined {
         });
       case 'P2025':
         return Errors.notFound('The requested record was not found.');
+      case 'P1000': // authentication failed (logged by code; clients see 503)
       case 'P1001':
       case 'P1002':
       case 'P1008':
       case 'P1017':
       case 'P2024':
+      case 'P2028': // transaction could not start/finish in time
         return Errors.serviceUnavailable('The database is temporarily unavailable.');
       default:
         return undefined;
