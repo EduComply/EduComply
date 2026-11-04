@@ -2,23 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { grantRole, GrantRoleError } from '../../src/modules/users/application/grantRole.js';
 import { createUser, linkIdentity } from '../../src/modules/users/infrastructure/userRepository.js';
 import { disconnectPrisma, getPrisma } from '../../src/shared/infrastructure/database/prisma.js';
-import type { PrismaClient } from '../../src/generated/prisma/client.js';
-import { inRollback, testIds } from './helpers.js';
-
-/**
- * grantRole opens its own transaction; inside inRollback we pass the transaction
- * client through a thin shim so everything still rolls back.
- */
-function asClient(tx: unknown): PrismaClient {
-  return new Proxy(tx as object, {
-    get(target, prop, receiver) {
-      if (prop === '$transaction') {
-        return (fn: (t: unknown) => Promise<unknown>) => fn(target);
-      }
-      return Reflect.get(target, prop, receiver);
-    },
-  }) as PrismaClient;
-}
+import { asClient, inRollback, testIds } from './helpers.js';
 
 afterAll(async () => {
   await disconnectPrisma();

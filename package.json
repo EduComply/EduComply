@@ -22,6 +22,7 @@
     "test": "npm run test -w backend && npm run test -w frontend",
     "test:db": "npm run test:db -w backend",
     "test:redis": "npm run test:redis -w backend",
+    "test:keycloak": "npm run test:keycloak -w backend",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
     "db:generate": "npm run db:generate -w backend",
     "db:validate": "npm run db:validate -w backend",
@@ -34,7 +35,13 @@
     "db:studio": "npm run db:studio -w backend",
     "redis:up": "docker compose up -d redis",
     "redis:down": "docker compose down",
-    "redis:status": "docker compose ps redis"
+    "redis:status": "docker compose ps redis",
+    "auth:init-env": "npm run auth:init-env -w backend",
+    "keycloak:up": "npm run auth:init-env -w backend -- --check && docker compose up -d keycloak",
+    "keycloak:status": "docker compose ps keycloak",
+    "keycloak:logs": "docker compose logs --tail 50 keycloak",
+    "keycloak:reset": "docker compose rm -sf keycloak && docker volume rm -f educomply_keycloak-data",
+    "kc:user": "npm run kc:user -w backend --"
   },
   "engines": {
     "node": ">=20.19"

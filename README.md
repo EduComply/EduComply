@@ -60,6 +60,8 @@ npm install
 cp .env.example .env              # PowerShell: Copy-Item .env.example .env
 
 npm run redis:up                  # local Redis in Docker (needs Docker Desktop running)
+npm run auth:init-env             # once: adds Keycloak/OIDC dev settings + random secrets to .env
+npm run keycloak:up               # local Keycloak (first start pulls ~450 MB and imports the realm)
 npm run db:migrate:deploy         # apply committed migrations (non-destructive)
 npm run db:seed                   # create LEARNER / ADMIN / REVIEWER roles (idempotent)
 npm run dev
@@ -73,24 +75,25 @@ The landing page shows **API: online** when the frontend can reach the backend.
 
 ## Scripts (run from the repository root)
 
-| Command                | Purpose                                                                   |
-| ---------------------- | ------------------------------------------------------------------------- |
-| `npm run dev`          | Backend (tsx watch) and frontend (Vite) together                          |
-| `npm run dev:backend`  | Backend only                                                              |
-| `npm run dev:frontend` | Frontend only                                                             |
-| `npm run build`        | Compile backend to `backend/dist`, bundle frontend to `frontend/dist`     |
-| `npm start`            | Run the compiled backend                                                  |
-| `npm run lint`         | ESLint (zero warnings allowed)                                            |
-| `npm run format`       | Prettier write                                                            |
-| `npm run format:check` | Prettier check                                                            |
-| `npm run typecheck`    | `tsc --noEmit` in both workspaces                                         |
-| `npm test`             | Unit and HTTP tests in both workspaces (no database needed)               |
-| `npm run test:db`      | Database integration tests (needs `DATABASE_URL`; all writes rolled back) |
-| `npm run test:redis`   | Live Redis tests (needs Redis at `REDIS_URL`; test keys deleted)          |
-| `npm run redis:up`     | Start local Redis (`docker compose up -d redis`)                          |
-| `npm run redis:status` | Show Redis container health                                               |
-| `npm run redis:down`   | Stop local services                                                       |
-| `npm run check`        | Format check, lint, typecheck, test and build                             |
+| Command                 | Purpose                                                                   |
+| ----------------------- | ------------------------------------------------------------------------- |
+| `npm run dev`           | Backend (tsx watch) and frontend (Vite) together                          |
+| `npm run dev:backend`   | Backend only                                                              |
+| `npm run dev:frontend`  | Frontend only                                                             |
+| `npm run build`         | Compile backend to `backend/dist`, bundle frontend to `frontend/dist`     |
+| `npm start`             | Run the compiled backend                                                  |
+| `npm run lint`          | ESLint (zero warnings allowed)                                            |
+| `npm run format`        | Prettier write                                                            |
+| `npm run format:check`  | Prettier check                                                            |
+| `npm run typecheck`     | `tsc --noEmit` in both workspaces                                         |
+| `npm test`              | Unit and HTTP tests in both workspaces (no database needed)               |
+| `npm run test:db`       | Database integration tests (needs `DATABASE_URL`; all writes rolled back) |
+| `npm run test:redis`    | Live Redis tests (needs Redis at `REDIS_URL`; test keys deleted)          |
+| `npm run test:keycloak` | Live OIDC tests (needs Keycloak + Redis; temporary Keycloak user removed) |
+| `npm run redis:up`      | Start local Redis (`docker compose up -d redis`)                          |
+| `npm run redis:status`  | Show Redis container health                                               |
+| `npm run redis:down`    | Stop local services                                                       |
+| `npm run check`         | Format check, lint, typecheck, test and build                             |
 
 ## API conventions
 
@@ -120,6 +123,48 @@ Redis holds only short-lived data — sessions, rate-limit counters and OIDC log
 - Every key is `REDIS_KEY_PREFIX` + namespace + parts, e.g. `educomply:session:<id>` ([keys.ts](backend/src/shared/infrastructure/redis/keys.ts)), and every value has a TTL (sessions: 8 h idle).
 - The API starts even if Redis is down; it reconnects with backoff and `/api/v1/ready` returns `503` until Redis is reachable.
 - Local Redis: `npm run redis:up` (Docker Desktop must be running), then `npm run redis:status` should show `healthy`. It listens on `127.0.0.1:6379` only and has no password — development only.
+
+## Authentication (OpenID Connect, backend-for-frontend)
+
+The API performs the OIDC Authorization Code flow with **PKCE (S256), state and nonce** and keeps all tokens server-side. The browser only receives:
+
+| Cookie       | Contents                        | Flags                                                      |
+| ------------ | ------------------------------- | ---------------------------------------------------------- |
+| `ec_session` | opaque 256-bit session id       | HttpOnly, SameSite=Lax, Secure on HTTPS/production, Path=/ |
+| `ec_csrf`    | CSRF token (also in `/me`)      | readable by the portal, SameSite=Lax                       |
+| `ec_login`   | OIDC state (10 min, login only) | HttpOnly, Path=/api/v1/auth                                |
+
+Sessions live in Redis (`educomply:session:<sha256(id)>`) with an **8-hour idle timeout**; the id is regenerated at every login and destroyed at logout. Every `POST/PUT/PATCH/DELETE` by a signed-in user must send `X-CSRF-Token`.
+
+| Endpoint                                      | Access           | Notes                                                               |
+| --------------------------------------------- | ---------------- | ------------------------------------------------------------------- |
+| `GET /api/v1/auth/login?returnTo=/learner`    | public           | 302 to Keycloak; `returnTo` must be a relative path                 |
+| `GET /api/v1/auth/oidc/callback`              | public           | validates and signs in; failures redirect to `/?authError=<CODE>`   |
+| `POST /api/v1/auth/logout`                    | signed in + CSRF | `{ "idpLogoutUrl": "…" }` — open it to end the Keycloak session too |
+| `GET /api/v1/me`                              | signed in        | user, `roles`, `csrfToken`; `401 SESSION_EXPIRED` otherwise         |
+| `GET /api/v1/users`, `GET /api/v1/users/{id}` | ADMIN            | search / detail                                                     |
+| `PATCH /api/v1/users/{id}/roles`              | ADMIN + CSRF     | `{ "roles": ["REVIEWER"], "reason": "…" }` — audited                |
+| `GET /api/v1/audit-events`                    | ADMIN, REVIEWER  | append-only audit log, newest first                                 |
+
+Rate limits (Redis): `/auth/*` 20/min per IP (fails closed), signed-in routes 300/min per user.
+
+**Roles.** New users always start as **LEARNER**; roles are never taken from the identity provider and existing roles are kept on later logins. Only an ADMIN (audited endpoint) or the development `db:grant-role` tool can change a role; admins cannot change their own role or demote the last admin.
+
+### Local Keycloak and test identities (development only)
+
+1. `npm run auth:init-env` — writes `OIDC_*` and `KEYCLOAK_ADMIN_*` to `.env` (random secrets, never printed).
+2. `npm run keycloak:up`, then `npm run keycloak:status` until `(healthy)`. Realm `educomply`, client `educomply-api` (confidential, PKCE S256, no password grant, no self-registration). Admin console: http://localhost:8080 (credentials in your `.env`).
+3. Create a test user — a strong password is generated and shown once:
+   ```bash
+   npm run kc:user -- create --username learner1 --email learner1@educomply.test --first Lea --last Learner
+   ```
+4. `npm run dev`, open http://localhost:5173 and click **Sign in**. The first sign-in creates the EduComply user (LEARNER).
+5. Make a test admin after that first sign-in:
+   ```bash
+   npm run db:grant-role -- --email learner1@educomply.test --role ADMIN --reason "Sprint 1 test admin"
+   ```
+
+Never reuse real institutional passwords for test identities. `npm run kc:user -- delete --username learner1` removes one; `npm run keycloak:reset` deletes the local Keycloak data and re-imports the realm (needed after changing `OIDC_CLIENT_SECRET`).
 
 ## Database (Neon PostgreSQL + Prisma)
 

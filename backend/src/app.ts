@@ -1,5 +1,11 @@
+import cookieParser from 'cookie-parser';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
+import { createDefaultModules, type AppModules } from './composition.js';
+import { auditRouter } from './modules/audit/presentation/auditRouter.js';
+import { createAuthGuards } from './modules/auth/presentation/authGuards.js';
+import { authRouter } from './modules/auth/presentation/authRouter.js';
+import { usersRouter } from './modules/users/presentation/usersRouter.js';
 import { env } from './config/env.js';
 import type { ReadinessChecks } from './modules/health/application/getReadiness.js';
 import { healthRouter } from './modules/health/presentation/healthRouter.js';
@@ -20,11 +26,13 @@ export interface AppOptions {
   readinessTimeoutMs?: number;
   /** CORS allow-list; defaults to CORS_ORIGINS / APP_ORIGIN. */
   corsOrigins?: readonly string[];
+  /** Auth, user and audit services; defaults to the real PostgreSQL/Redis/OIDC adapters. */
+  modules?: AppModules;
 }
 
 /**
  * Builds the Express app. Middleware order matters:
- * request id + logging → security headers → CORS → body parsing → routes → 404 → errors.
+ * request id + logging → security headers → CORS → body + cookie parsing → routes → 404 → errors.
  */
 export function createApp(options: AppOptions = {}): Express {
   const app = express();
@@ -36,6 +44,7 @@ export function createApp(options: AppOptions = {}): Express {
   app.use(helmet());
   app.use(corsMiddleware(options.corsOrigins ?? env.corsOrigins));
   app.use(express.json({ limit: JSON_BODY_LIMIT, strict: true }));
+  app.use(cookieParser()); // unsigned: ec_session is a random 256-bit id, not trusted data
 
   // ── Module routers ────────────────────────────────────────────────
   app.use(
@@ -46,7 +55,22 @@ export function createApp(options: AppOptions = {}): Express {
       ...(options.readinessTimeoutMs ? { checkTimeoutMs: options.readinessTimeoutMs } : {}),
     }),
   );
-  // Sprint 1 next: auth, users, audit routes (Task 4)
+
+  const modules = options.modules ?? createDefaultModules();
+  const guards = createAuthGuards(modules.auth, modules.cookiePolicy, modules.rateLimitStore);
+  app.use(
+    API_PREFIX,
+    authRouter({
+      service: modules.auth,
+      guards,
+      cookiePolicy: modules.cookiePolicy,
+      rateLimitStore: modules.rateLimitStore,
+      appOrigin: modules.appOrigin,
+      redirectUri: modules.redirectUri,
+    }),
+  );
+  app.use(API_PREFIX, usersRouter({ guards, admin: modules.userAdmin }));
+  app.use(API_PREFIX, auditRouter({ guards, audit: modules.auditQuery }));
 
   app.use(notFoundHandler);
   app.use(errorHandler);

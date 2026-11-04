@@ -18,19 +18,19 @@ Repositories take a `DbClient` (Prisma client **or** transaction client) so a us
 
 ## Module map
 
-| Module          | Base path (`/api/v1`)           | Sprint (proposal v1.1) | Status          |
-| --------------- | ------------------------------- | ---------------------- | --------------- |
-| `health`        | `/health`, `/ready`             | 1                      | Implemented     |
-| `auth`          | `/auth/*`, `/me`                | 1                      | Next: auth-oidc |
-| `users`         | `/users`                        | 1                      | Data layer done |
-| `audit`         | `/audit-events`                 | 1                      | Data layer done |
-| `courses`       | `/courses`, `/course-versions`  | 2                      | Planned         |
-| `question-bank` | `/question-banks`               | 2                      | Planned         |
-| `enrolments`    | `/enrolments`, `/me/enrolments` | 2                      | Planned         |
-| `playback`      | `/playback-sessions`            | 3                      | Planned         |
-| `assessments`   | `/assessments`, `/attempts`     | 4                      | Planned         |
-| `monitoring`    | `/monitoring-events`, `/flags`  | 5                      | Planned         |
-| `certificates`  | `/certificates`, `/verify`      | 5                      | Planned         |
-| `reports`       | `/reports`                      | 6                      | Planned         |
+| Module          | Base path (`/api/v1`)           | Sprint (proposal v1.1) | Status      |
+| --------------- | ------------------------------- | ---------------------- | ----------- |
+| `health`        | `/health`, `/ready`             | 1                      | Implemented |
+| `auth`          | `/auth/*`                       | 1                      | Implemented |
+| `users`         | `/me`, `/users`                 | 1                      | Implemented |
+| `audit`         | `/audit-events`                 | 1                      | Implemented |
+| `courses`       | `/courses`, `/course-versions`  | 2                      | Planned     |
+| `question-bank` | `/question-banks`               | 2                      | Planned     |
+| `enrolments`    | `/enrolments`, `/me/enrolments` | 2                      | Planned     |
+| `playback`      | `/playback-sessions`            | 3                      | Planned     |
+| `assessments`   | `/assessments`, `/attempts`     | 4                      | Planned     |
+| `monitoring`    | `/monitoring-events`, `/flags`  | 5                      | Planned     |
+| `certificates`  | `/certificates`, `/verify`      | 5                      | Planned     |
+| `reports`       | `/reports`                      | 6                      | Planned     |
 
 Create a module folder only when its first feature is implemented. Register its router in `src/app.ts`.

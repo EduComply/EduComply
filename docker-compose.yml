@@ -1,12 +1,13 @@
-# EduComply local development services.
-# Redis only for now; the full container setup (API, web, CI) is Task 7.
+# EduComply local development services (the full container setup is Task 7).
 #
-#   docker compose up -d redis      start
-#   docker compose ps               health status
-#   docker compose down             stop (data is ephemeral)
+#   npm run redis:up        Redis            (docker compose up -d redis)
+#   npm run keycloak:up     Keycloak (OIDC)  (checks .env first, then docker compose up -d keycloak)
+#   docker compose ps       health status
+#   docker compose down     stop everything
 #
-# Development only: no password, bound to 127.0.0.1 so it is not reachable from
-# other machines. Production uses a managed Redis via rediss:// in REDIS_URL.
+# Development only. Ports are bound to 127.0.0.1 so they are not reachable from other
+# machines. Secrets come from the repository-root .env (never committed); run
+# `npm run auth:init-env` once to generate the Keycloak/OIDC development values.
 name: educomply
 
 services:
@@ -32,3 +33,41 @@ services:
       retries: 10
       start_period: 5s
     restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    # Development mode with the EduComply realm imported on first start.
+    command: ['start-dev', '--import-realm']
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-}
+      # Fixed public URL so the issuer is always http://localhost:8080/realms/educomply
+      KC_HOSTNAME: http://localhost:8080
+      KC_HTTP_PORT: '8080'
+      KC_HEALTH_ENABLED: 'true'
+      # Substituted into ${EDUCOMPLY_OIDC_CLIENT_SECRET} in the realm file at import.
+      EDUCOMPLY_OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+    ports:
+      - '127.0.0.1:8080:8080'
+    volumes:
+      # Volume on /opt/keycloak/data (exists in the image, so it inherits keycloak's ownership);
+      # the realm file is bind-mounted inside it.
+      - keycloak-data:/opt/keycloak/data
+      - ./infra/keycloak/educomply-realm.json:/opt/keycloak/data/import/educomply-realm.json:ro
+    healthcheck:
+      # The image has no curl; probe the management port (9000) with bash /dev/tcp.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"UP"' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  # Development realm, users and sessions (survives restarts; remove to re-import the realm).
+  keycloak-data:

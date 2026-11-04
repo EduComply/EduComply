@@ -18,6 +18,10 @@ const optionalString = z
   .optional()
   .transform((v) => (v === '' ? undefined : v));
 
+const optionalUrl = optionalString.refine((v) => v === undefined || URL.canParse(v), {
+  message: 'must be an absolute URL',
+});
+
 /** postgres:// or postgresql:// URL; the value itself never appears in error output. */
 const optionalPostgresUrl = optionalString.refine(
   (v) => v === undefined || /^postgres(ql)?:\/\/[^\s]+$/.test(v),
@@ -57,23 +61,65 @@ const EnvSchema = z
       .regex(/^[a-z0-9_-]+:$/, 'lower-case letters, digits, _ or -, ending with ":"')
       .default('educomply:'),
 
-    // Declared now, required by Task 4 (authentication).
-    SESSION_SECRET: optionalString,
-    OIDC_ISSUER: optionalString,
+    // OpenID Connect (backend-for-frontend; Keycloak in development).
+    OIDC_ISSUER: optionalUrl,
     OIDC_CLIENT_ID: optionalString,
     OIDC_CLIENT_SECRET: optionalString,
-    OIDC_REDIRECT_URI: optionalString,
+    /** Must exactly match a redirect URI registered at the identity provider. */
+    OIDC_REDIRECT_URI: optionalUrl,
+    /** Where the IdP returns the browser after single logout. Defaults to APP_ORIGIN + "/". */
+    OIDC_POST_LOGOUT_REDIRECT_URI: optionalUrl,
+    OIDC_SCOPES: z.string().trim().default('openid email profile'),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.NODE_ENV === 'production') {
-      for (const key of ['DATABASE_URL', 'REDIS_URL'] as const) {
+      const required = [
+        'DATABASE_URL',
+        'REDIS_URL',
+        'OIDC_ISSUER',
+        'OIDC_CLIENT_ID',
+        'OIDC_CLIENT_SECRET',
+        'OIDC_REDIRECT_URI',
+      ] as const;
+      for (const key of required) {
         if (!cfg[key])
           ctx.addIssue({ code: 'custom', path: [key], message: 'required in production' });
+      }
+      // Session cookies are Secure in production, so every browser-facing URL must be HTTPS.
+      for (const key of ['APP_ORIGIN', 'OIDC_ISSUER', 'OIDC_REDIRECT_URI'] as const) {
+        const value = cfg[key];
+        if (value && !value.startsWith('https://'))
+          ctx.addIssue({ code: 'custom', path: [key], message: 'must use https in production' });
+      }
+    }
+    const oidcKeys = [
+      'OIDC_ISSUER',
+      'OIDC_CLIENT_ID',
+      'OIDC_CLIENT_SECRET',
+      'OIDC_REDIRECT_URI',
+    ] as const;
+    const setCount = oidcKeys.filter((k) => cfg[k]).length;
+    if (setCount > 0 && setCount < oidcKeys.length) {
+      for (const key of oidcKeys) {
+        if (!cfg[key])
+          ctx.addIssue({
+            code: 'custom',
+            path: [key],
+            message: 'required when OIDC is configured',
+          });
       }
     }
   })
   .transform((cfg) => ({
     ...cfg,
+    /** True when every OIDC setting is present. */
+    oidcConfigured: Boolean(
+      cfg.OIDC_ISSUER && cfg.OIDC_CLIENT_ID && cfg.OIDC_CLIENT_SECRET && cfg.OIDC_REDIRECT_URI,
+    ),
+    /** Cookies get the Secure flag whenever the portal is served over HTTPS (always in production). */
+    cookieSecure: cfg.NODE_ENV === 'production' || cfg.APP_ORIGIN.startsWith('https://'),
+    postLogoutRedirectUri:
+      cfg.OIDC_POST_LOGOUT_REDIRECT_URI ?? `${cfg.APP_ORIGIN.replace(/\/$/, '')}/`,
     /** Parsed CORS allow-list (exact origin match). */
     corsOrigins: (cfg.CORS_ORIGINS ?? cfg.APP_ORIGIN)
       .split(',')

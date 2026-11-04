@@ -33,10 +33,15 @@ export interface RateLimitRedis {
  * with the first request and every counter expires (requires Redis 7+).
  */
 export class RedisRateLimitStore implements RateLimitStore {
-  constructor(private readonly redis: RateLimitRedis) {}
+  private readonly resolve: () => RateLimitRedis;
+
+  /** A client, or a getter so the store can be built before Redis is configured. */
+  constructor(redis: RateLimitRedis | (() => RateLimitRedis)) {
+    this.resolve = typeof redis === 'function' ? redis : () => redis;
+  }
 
   async hit(key: string, windowSeconds: number): Promise<RateLimitHit> {
-    const replies = (await this.redis
+    const replies = (await this.resolve()
       .multi()
       .incr(key)
       .expire(key, windowSeconds, 'NX')

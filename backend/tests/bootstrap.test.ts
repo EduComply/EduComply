@@ -70,10 +70,39 @@ describe('startup and shutdown', () => {
 });
 
 describe('environment validation', () => {
-  it('requires DATABASE_URL and REDIS_URL in production, naming only the variables', () => {
-    expect(() => parseEnv({ NODE_ENV: 'production' })).toThrowError(
-      /^Invalid environment configuration: DATABASE_URL, REDIS_URL$/,
+  it('requires database, Redis and OIDC settings in production, naming only the variables', () => {
+    expect(() =>
+      parseEnv({ NODE_ENV: 'production', APP_ORIGIN: 'https://portal.uni.ac.lk' }),
+    ).toThrowError(
+      /^Invalid environment configuration: DATABASE_URL, REDIS_URL, OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_REDIRECT_URI$/,
     );
+  });
+
+  it('requires HTTPS URLs in production (Secure cookies)', () => {
+    const run = () =>
+      parseEnv({
+        NODE_ENV: 'production',
+        APP_ORIGIN: 'http://portal.uni.ac.lk',
+        DATABASE_URL: 'postgresql://u:p@h/db',
+        REDIS_URL: 'rediss://h:6380',
+        OIDC_ISSUER: 'http://idp.uni.ac.lk/realms/x',
+        OIDC_CLIENT_ID: 'educomply-api',
+        OIDC_CLIENT_SECRET: 'top-secret-value',
+        OIDC_REDIRECT_URI: 'https://portal.uni.ac.lk/api/v1/auth/oidc/callback',
+      });
+    expect(run).toThrowError(/APP_ORIGIN, OIDC_ISSUER$/);
+    expect(run).not.toThrowError(/top-secret-value/);
+  });
+
+  it('requires all OIDC settings once any is set', () => {
+    expect(() => parseEnv({ OIDC_ISSUER: 'http://localhost:8080/realms/educomply' })).toThrowError(
+      /OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_REDIRECT_URI/,
+    );
+  });
+
+  it('uses Secure cookies for HTTPS portals and in production', () => {
+    expect(parseEnv({}).cookieSecure).toBe(false);
+    expect(parseEnv({ APP_ORIGIN: 'https://portal.uni.ac.lk' }).cookieSecure).toBe(true);
   });
 
   it('rejects a malformed REDIS_URL without echoing it', () => {

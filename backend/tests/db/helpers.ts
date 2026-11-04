@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Prisma } from '../../src/generated/prisma/client.js';
+import type { Prisma, PrismaClient } from '../../src/generated/prisma/client.js';
 import { getPrisma } from '../../src/shared/infrastructure/database/prisma.js';
 
 class RollbackSignal extends Error {
@@ -37,4 +37,19 @@ export function testIds() {
     subject: `sub-${tag}`,
     institutionalId: `T-${tag}`,
   };
+}
+
+/**
+ * Wraps a transaction client so code that opens its own `$transaction` runs inside the
+ * surrounding test transaction instead (and is therefore rolled back too).
+ */
+export function asClient(tx: unknown): PrismaClient {
+  return new Proxy(tx as object, {
+    get(target, prop, receiver) {
+      if (prop === '$transaction') {
+        return (fn: (t: unknown) => Promise<unknown>) => fn(target);
+      }
+      return Reflect.get(target, prop, receiver);
+    },
+  }) as PrismaClient;
 }

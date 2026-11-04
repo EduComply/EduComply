@@ -17,28 +17,8 @@ import {
 import { runCheck } from '../src/shared/infrastructure/dependency.js';
 import { RedisNamespace, RedisTtl, redisKey } from '../src/shared/infrastructure/redis/keys.js';
 import { checkRedisClient, reconnectDelay } from '../src/shared/infrastructure/redis/redis.js';
-import { RedisTtlStore, type TtlStoreClient } from '../src/shared/infrastructure/redis/ttlStore.js';
-
-/** Minimal in-memory Redis fake for the commands the stores use. */
-class FakeRedis implements TtlStoreClient {
-  data = new Map<string, { value: string; ttl: number }>();
-  async get(key: string) {
-    return this.data.get(key)?.value ?? null;
-  }
-  async setEx(key: string, seconds: number, value: string) {
-    this.data.set(key, { value, ttl: seconds });
-    return 'OK';
-  }
-  async expire(key: string, seconds: number) {
-    const entry = this.data.get(key);
-    if (!entry) return 0;
-    entry.ttl = seconds;
-    return 1;
-  }
-  async del(key: string) {
-    return this.data.delete(key) ? 1 : 0;
-  }
-}
+import { RedisTtlStore } from '../src/shared/infrastructure/redis/ttlStore.js';
+import { FakeRedis } from './support/fakeRedis.js';
 
 describe('redis keys', () => {
   it('prefixes and namespaces every key', () => {
@@ -66,7 +46,7 @@ describe('RedisTtlStore', () => {
     const store = new RedisTtlStore<{ userId: string }>(fake, RedisNamespace.Session, 60);
 
     await store.set('s1', { userId: 'u1' });
-    expect(fake.data.get(store.key('s1'))).toEqual({ value: '{"userId":"u1"}', ttl: 60 });
+    expect(fake.data.get(store.key('s1'))).toMatchObject({ value: '{"userId":"u1"}', ttl: 60 });
     expect(await store.get('s1')).toEqual({ userId: 'u1' });
 
     expect(await store.touch('s1', 120)).toBe(true);

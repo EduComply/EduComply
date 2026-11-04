@@ -71,6 +71,16 @@ export class HttpError extends Error {
 export const Errors = {
   validation: (errors: FieldError[], detail = 'The request is invalid.') =>
     new HttpError(400, 'VALIDATION_FAILED', 'Request validation failed', { detail, errors }),
+  /** No session or an expired session (API Design §8: 401 SESSION_EXPIRED). */
+  sessionExpired: (detail = 'Sign in to continue.') =>
+    new HttpError(401, 'SESSION_EXPIRED', 'Unauthorized', { detail }),
+  forbidden: (detail = 'You do not have permission to perform this action.') =>
+    new HttpError(403, 'FORBIDDEN', 'Forbidden', { detail }),
+  csrfInvalid: () =>
+    new HttpError(403, 'CSRF_INVALID', 'Forbidden', {
+      detail: 'Missing or invalid X-CSRF-Token header.',
+    }),
+  conflict: (code: string, detail: string) => new HttpError(409, code, 'Conflict', { detail }),
   notFound: (detail?: string) =>
     new HttpError(404, 'NOT_FOUND', 'Not Found', detail ? { detail } : {}),
   payloadTooLarge: () =>

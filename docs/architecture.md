@@ -23,7 +23,21 @@ request id + `pino-http` JSON access log (method, path, status, requestId only) 
 
 Shared building blocks (Task 3): `validate()` (Zod, strict), `rateLimit()` with Redis/memory stores, `RedisTtlStore` for expiring JSON (sessions, OIDC state), `startServer()` with graceful shutdown (drain HTTP, then close PostgreSQL and Redis).
 
-Task 4 adds: session middleware on `RedisTtlStore`, CSRF check, `/auth/*` rate limits, authentication and role middleware.
+### Authentication (Task 4)
+
+```
+Browser ── GET /auth/login ──► API ── 302 (PKCE S256, state, nonce) ──► Keycloak
+   ▲                            │  state → Redis oidc-state (10 min, one-time) + ec_login cookie
+   │                            ▼
+   └── 302 portal ◄── API ◄── GET /auth/oidc/callback?code&state ◄── Keycloak
+        ec_session + ec_csrf      code exchange (client secret + PKCE verifier), ID token validated
+                                  (iss, aud, exp, nonce), user synced in PostgreSQL + audit,
+                                  new session id → Redis session (8 h idle)
+```
+
+Layers: `auth/application` (AuthService and ports: IdentityProvider, UserDirectory, SessionRepository, LoginStateRepository), `auth/infrastructure` (openid-client adapter, Redis repositories), `auth/presentation` (cookies, guards, router); user sync and admin services in `users/infrastructure` (Prisma). `src/composition.ts` wires the real adapters; tests inject fakes.
+
+Guards: `authenticated` = session lookup (fail closed on Redis errors → 503) + CSRF for unsafe methods + per-user rate limit; `requireRole(...)` → 403 FORBIDDEN, logged with user id and path only.
 
 ### Health
 

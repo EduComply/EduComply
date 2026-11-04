@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "test:db": "npm run db:generate && vitest run --config vitest.db.config.ts",
     "test:redis": "vitest run --config vitest.redis.config.ts",
+    "test:keycloak": "vitest run --config vitest.keycloak.config.ts",
     "db:generate": "prisma generate --no-hints",
     "db:validate": "prisma validate",
     "db:status": "prisma migrate status",
@@ -21,14 +22,18 @@
     "db:seed": "prisma db seed",
     "db:inspect": "tsx scripts/db-inspect.ts",
     "db:grant-role": "tsx scripts/grant-role.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "auth:init-env": "tsx scripts/init-auth-env.ts",
+    "kc:user": "tsx scripts/keycloak-user.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "express": "^5.3.0",
     "helmet": "^8.3.0",
+    "openid-client": "^6.8.9",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
     "pino-http": "^11.0.0",
@@ -36,6 +41,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.6",

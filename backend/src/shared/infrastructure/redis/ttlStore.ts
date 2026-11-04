@@ -3,6 +3,7 @@ import { redisKey, type RedisNamespaceName } from './keys.js';
 /** The Redis commands a TTL store needs (satisfied by the node-redis client). */
 export interface TtlStoreClient {
   get(key: string): Promise<unknown>;
+  getDel(key: string): Promise<unknown>;
   setEx(key: string, seconds: number, value: string): Promise<unknown>;
   expire(key: string, seconds: number): Promise<unknown>;
   del(key: string): Promise<unknown>;
@@ -14,14 +15,22 @@ export interface TtlStoreClient {
  * compliance records live in PostgreSQL.
  */
 export class RedisTtlStore<T> {
+  private readonly resolveClient: () => TtlStoreClient;
+
   constructor(
-    private readonly client: TtlStoreClient,
+    /** A client, or a getter so the store can be built before Redis is configured. */
+    client: TtlStoreClient | (() => TtlStoreClient),
     private readonly namespace: RedisNamespaceName,
     private readonly defaultTtlSeconds: number,
   ) {
+    this.resolveClient = typeof client === 'function' ? client : () => client;
     if (!Number.isInteger(defaultTtlSeconds) || defaultTtlSeconds <= 0) {
       throw new Error('defaultTtlSeconds must be a positive integer');
     }
+  }
+
+  private client(): TtlStoreClient {
+    return this.resolveClient();
   }
 
   key(id: string): string {
@@ -29,7 +38,10 @@ export class RedisTtlStore<T> {
   }
 
   async get(id: string): Promise<T | null> {
-    const raw = await this.client.get(this.key(id));
+    return this.parse(await this.client().get(this.key(id)));
+  }
+
+  private parse(raw: unknown): T | null {
     if (typeof raw !== 'string') return null;
     try {
       return JSON.parse(raw) as T;
@@ -38,17 +50,22 @@ export class RedisTtlStore<T> {
     }
   }
 
+  /** Reads and deletes atomically (GETDEL), so one-time values (OIDC state) cannot be replayed. */
+  async take(id: string): Promise<T | null> {
+    return this.parse(await this.client().getDel(this.key(id)));
+  }
+
   async set(id: string, value: T, ttlSeconds = this.defaultTtlSeconds): Promise<void> {
-    await this.client.setEx(this.key(id), ttlSeconds, JSON.stringify(value));
+    await this.client().setEx(this.key(id), ttlSeconds, JSON.stringify(value));
   }
 
   /** Extends the expiry (sliding idle timeout). Returns false if the entry no longer exists. */
   async touch(id: string, ttlSeconds = this.defaultTtlSeconds): Promise<boolean> {
-    const result = await this.client.expire(this.key(id), ttlSeconds);
+    const result = await this.client().expire(this.key(id), ttlSeconds);
     return result === 1 || result === true;
   }
 
   async delete(id: string): Promise<void> {
-    await this.client.del(this.key(id));
+    await this.client().del(this.key(id));
   }
 }

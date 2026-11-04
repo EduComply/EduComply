@@ -4,6 +4,7 @@ export const AuditAction = {
   UserRoleChanged: 'user.role_changed',
   IdentityLinked: 'identity.linked',
   AuthLogin: 'auth.login',
+  AuthLoginDenied: 'auth.login_denied',
   AuthLogout: 'auth.logout',
 } as const;
 
