@@ -1,4 +1,6 @@
 import { Link, useSearchParams } from 'react-router-dom';
+import { useAuth } from '@/auth/authContext';
+import { loginUrl } from '@/auth/session';
 import { ApiStatus } from '@/components/ApiStatus';
 import { config } from '@/config';
 
@@ -18,7 +20,8 @@ const AUTH_ERRORS: Record<string, string> = {
 export function LandingPage() {
   const [params] = useSearchParams();
   const authError = params.get('authError');
-  const loginUrl = `${config.apiBaseUrl}/auth/login?returnTo=${encodeURIComponent('/learner')}`;
+  const { state } = useAuth();
+  const signedIn = state.status === 'authenticated' ? state.user : null;
 
   return (
     <div className="landing">
@@ -32,9 +35,15 @@ export function LandingPage() {
         )}
         <ApiStatus />
         <div className="landing-actions">
-          <a href={loginUrl} className="btn btn-primary">
-            Sign in with institutional account
-          </a>
+          {signedIn ? (
+            <p>
+              Signed in as <strong>{signedIn.displayName}</strong> ({signedIn.roles.join(', ')})
+            </p>
+          ) : (
+            <a href={loginUrl('/learner')} className="btn btn-primary">
+              Sign in with institutional account
+            </a>
+          )}
         </div>
         <div className="landing-actions">
           <Link to="/learner" className="btn btn-secondary">

@@ -1,4 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { UserStatus } from '@/auth/UserStatus';
 import { config } from '@/config';
 import type { NavItem } from '@/navigation';
 
@@ -38,7 +39,7 @@ export function AppShell({ basePath, portalLabel, nav }: AppShellProps) {
       <div className="main">
         <header className="topbar">
           <h1>{current?.label ?? portalLabel}</h1>
-          <span className="badge badge-neutral">Not signed in</span>
+          <UserStatus />
         </header>
         <main className="content" id="main-content">
           <Outlet />

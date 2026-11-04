@@ -164,6 +164,13 @@ Rate limits (Redis): `/auth/*` 20/min per IP (fails closed), signed-in routes 30
    npm run db:grant-role -- --email learner1@educomply.test --role ADMIN --reason "Sprint 1 test admin"
    ```
 
+### Verifying sign-in and sign-out in the browser
+
+1. `npm run redis:up`, `npm run keycloak:up`, then `npm run dev` (frontend http://localhost:5173, API :3000).
+2. Open http://localhost:5173 and click **Sign in with institutional account**; sign in at Keycloak.
+3. You return to http://localhost:5173/learner/dashboard. The top bar shows your name, role and **Sign out** (it reads `GET /api/v1/me`). In DevTools → Application → Cookies → `http://localhost:5173` you see `ec_session` (HttpOnly) and `ec_csrf`; DevTools → Network shows `GET /api/v1/me` → 200.
+4. Click **Sign out**: `POST /api/v1/auth/logout` (with `X-CSRF-Token`) → Keycloak logout → back to http://localhost:5173/. The top bar shows **Not signed in**, `ec_session` is gone, and `/api/v1/me` returns 401.
+
 Never reuse real institutional passwords for test identities. `npm run kc:user -- delete --username learner1` removes one; `npm run keycloak:reset` deletes the local Keycloak data and re-imports the realm (needed after changing `OIDC_CLIENT_SECRET`).
 
 ## Database (Neon PostgreSQL + Prisma)

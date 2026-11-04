@@ -136,6 +136,17 @@ a {
   padding: var(--ec-space-8);
 }
 
+.user-status {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-space-3);
+}
+
+.user-name {
+  font-weight: 600;
+  font-size: var(--ec-text-sm);
+}
+
 /* ── UI primitives ─────────────────────────────────────────────── */
 .card {
   background: var(--ec-surface);

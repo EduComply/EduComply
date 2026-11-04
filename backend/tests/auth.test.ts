@@ -54,6 +54,29 @@ describe('OIDC login (authorization code + PKCE)', () => {
     expect(JSON.stringify(res.headers)).not.toContain('fake-id-token');
   });
 
+  it('session cookies are host-only with Path=/ so the portal sends them to /api/v1/me (regression)', async () => {
+    const ctx = buildAuthApp();
+    const start = await request(ctx.app).get('/api/v1/auth/login?returnTo=/learner');
+    const state = new URL(start.headers.location!).searchParams.get('state')!;
+    const res = await request(ctx.app)
+      .get('/api/v1/auth/oidc/callback')
+      .query({ code: ctx.idp.issueCode(state, learner), state })
+      .set('Cookie', `ec_login=${state}`);
+    const cookies = cookiesFrom(res);
+    for (const name of ['ec_session', 'ec_csrf'] as const) {
+      expect(cookies[name]!.attrs).toMatch(/Path=\/(;|$)/);
+      expect(cookies[name]!.attrs).not.toMatch(/Domain=/i);
+    }
+    // The login-state cookie is cleared once used.
+    expect(cookies.ec_login!.attrs).toMatch(/Expires=Thu, 01 Jan 1970/);
+
+    const me = await request(ctx.app)
+      .get('/api/v1/me')
+      .set('Cookie', `ec_session=${cookies.ec_session!.value}`);
+    expect(me.status).toBe(200);
+    expect(me.body.email).toBe(learner.email);
+  });
+
   it('rejects an unknown or forged state', async () => {
     const ctx = buildAuthApp();
     const res = await request(ctx.app)
