@@ -63,11 +63,15 @@ export function parsePsProcesses(output: string): ProcessInfo[] {
     .map((m) => ({ pid: Number(m[1]), ppid: Number(m[2]), name: m[3]!, command: m[4]! }));
 }
 
-/** Lists processes (node only on Windows, to stay fast). */
-export async function listProcesses(): Promise<ProcessInfo[]> {
+/**
+ * Lists processes. On Windows only node.exe by default (fast); `all: true` includes every
+ * process, which is needed to follow npm (node) → cmd.exe → vite/tsx (node) parent chains.
+ */
+export async function listProcesses(options: { all?: boolean } = {}): Promise<ProcessInfo[]> {
   if (process.platform === 'win32') {
+    const filter = options.all ? '' : ' -Filter "Name=\'node.exe\'"';
     const script =
-      'Get-CimInstance Win32_Process -Filter "Name=\'node.exe\'" | ' +
+      `Get-CimInstance Win32_Process${filter} | ` +
       'Select-Object ProcessId,ParentProcessId,Name,CommandLine,' +
       "@{n='Started';e={$_.CreationDate.ToString('s')}} | ConvertTo-Json -Compress";
     const { stdout } = await run(

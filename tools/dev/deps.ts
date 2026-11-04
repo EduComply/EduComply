@@ -83,7 +83,17 @@ export async function composeServices(): Promise<
   try {
     const { stdout } = await run(
       'docker',
-      ['compose', '-p', COMPOSE_PROJECT, 'ps', '--all', '--format', '{{json .}}'],
+      [
+        'compose',
+        '-p',
+        COMPOSE_PROJECT,
+        '--profile',
+        'app',
+        'ps',
+        '--all',
+        '--format',
+        '{{json .}}',
+      ],
       { cwd: REPO_ROOT, timeout: 10_000, windowsHide: true },
     );
     return stdout

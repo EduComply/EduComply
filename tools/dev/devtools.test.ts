@@ -135,6 +135,30 @@ describe('port conflict detection', () => {
     expect(report.fix).toContain('needs your approval');
     expect(inspection.owners).toEqual([]); // Docker's proxy process is not reported as the owner
   });
+
+  it('recognises the EduComply Docker stack (unidentified proxy pid, own compose project)', async () => {
+    const inspection = await inspectPort('frontend', {
+      probe: async (port) => ({ port, inUse: true, ipv4: true, ipv6: false }),
+      containers: async () => [
+        {
+          name: 'educomply-frontend-1',
+          project: 'educomply',
+          state: 'running',
+          status: 'Up (healthy)',
+          hostPorts: [5173],
+        },
+      ],
+      // On Windows only node.exe processes are listed, so the proxy pid is not identifiable.
+      processes: async () => [],
+      listeners: async () => [{ port: 5173, pid: 5364, address: '127.0.0.1:5173' }],
+      session: null,
+    });
+    expect(inspection.owners).toEqual([]);
+    const report = explainConflict(inspection);
+    expect(report.fix).toBe(
+      'The EduComply Docker stack is running. Use it, or stop it first: npm run docker:stop',
+    );
+  });
 });
 
 describe('process ownership', () => {

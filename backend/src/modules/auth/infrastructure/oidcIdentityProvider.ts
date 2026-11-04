@@ -18,6 +18,27 @@ export interface OidcSettings {
   scopes: string;
   /** Seconds to wait for the provider before treating it as unavailable. */
   timeoutSeconds?: number;
+  /** Back-channel base URL replacing the issuer's origin for server-to-server requests. */
+  internalUrl?: string;
+}
+
+/**
+ * Returns a fetch that sends requests for the issuer's origin to `internalUrl` instead
+ * (same path and query). Only the network destination changes: the discovery document,
+ * token issuer and audience are still validated against the public OIDC_ISSUER, and
+ * requests to any other origin are passed through unchanged.
+ */
+export function backChannelFetch(issuer: string, internalUrl: string): oidc.CustomFetch {
+  const publicOrigin = new URL(issuer).origin;
+  const internal = new URL(internalUrl);
+  return (url, options) => {
+    const target = new URL(url);
+    if (target.origin === publicOrigin) {
+      target.protocol = internal.protocol;
+      target.host = internal.host;
+    }
+    return fetch(target, options as RequestInit);
+  };
 }
 
 const isLocalHttp = (url: URL) =>
@@ -46,6 +67,14 @@ export class OidcIdentityProvider implements IdentityProvider {
             timeout: this.settings.timeoutSeconds ?? 5,
             // Plain HTTP is allowed only for a local development provider (Keycloak on localhost).
             ...(isLocalHttp(issuer) ? { execute: [oidc.allowInsecureRequests] } : {}),
+            ...(this.settings.internalUrl
+              ? {
+                  [oidc.customFetch]: backChannelFetch(
+                    this.settings.issuer,
+                    this.settings.internalUrl,
+                  ),
+                }
+              : {}),
           },
         )
         .catch((err: unknown) => {

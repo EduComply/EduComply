@@ -82,9 +82,12 @@ export class Supervisor {
     }
     writeSession(this.session(), this.options.sessionFile);
 
-    // Record descendants (npm → cmd → node) so a later run can recognise orphans.
-    const snapshot = setTimeout(() => {
-      void listProcesses()
+    // Record descendants (npm → cmd → node) so a later run can recognise orphans. Refreshed
+    // periodically: the backend starts `tsx watch` only after `prisma generate`, and the
+    // watcher replaces its server process on every restart.
+    const recordTree = () => {
+      // All processes, so the chain npm → cmd.exe → vite/tsx does not break at cmd.exe.
+      void listProcesses({ all: true })
         .then((all) => {
           const roots = new Set([...this.procs.values()].map((p) => p.pid));
           const tree: Array<{ name: string; pid: number }> = [];
@@ -103,8 +106,10 @@ export class Supervisor {
           if (!this.stopping) writeSession(this.session(tree), this.options.sessionFile);
         })
         .catch(() => undefined);
-    }, this.options.treeSnapshotMs ?? 8_000);
-    snapshot.unref();
+    };
+    const first = this.options.treeSnapshotMs ?? 8_000;
+    setTimeout(recordTree, first).unref();
+    setInterval(recordTree, Math.max(first, 30_000)).unref();
 
     const onSignal = (signal: string) => {
       this.log(`\n${signal} received — stopping EduComply dev servers…`);

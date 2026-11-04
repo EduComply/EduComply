@@ -64,8 +64,9 @@ export async function inspectPort(
     for (const p of processes) if (classifyProcess(p) === kind) candidates.set(p.pid, p);
   }
   // Docker Desktop's proxy process owns published ports; the container is the real owner.
+  // Only node processes are listed on Windows, so the proxy appears as an unidentified pid.
   const list = [...candidates.values()].filter(
-    (p) => !(publishing.length > 0 && /docker/i.test(p.name + p.command)),
+    (p) => !(publishing.length > 0 && (/docker/i.test(p.name + p.command) || p.name === 'unknown')),
   );
   // Report root processes only (e.g. the `tsx watch` watcher, not each server it restarts).
   const roots = list.filter(
@@ -98,6 +99,11 @@ export function explainConflict(i: PortInspection): CheckResult {
     );
     if (c.project !== COMPOSE_PROJECT) {
       fixes.push(`Stop only that container (needs your approval): docker stop ${c.name}`);
+    } else {
+      // Our own containerised app (npm run docker:up) uses the same ports as npm run dev.
+      fixes.push(
+        'The EduComply Docker stack is running. Use it, or stop it first: npm run docker:stop',
+      );
     }
   }
   for (const o of i.owners) {

@@ -74,6 +74,13 @@ const EnvSchema = z
     /** Where the IdP returns the browser after single logout. Defaults to APP_ORIGIN + "/". */
     OIDC_POST_LOGOUT_REDIRECT_URI: optionalUrl,
     OIDC_SCOPES: z.string().trim().default('openid email profile'),
+    /**
+     * Optional back-channel base URL (discovery, token, JWKS, logout) for when the backend
+     * cannot reach the public issuer host — e.g. in Docker, where "localhost" is the backend
+     * container itself: http://keycloak:8080. Browser redirects and ID-token issuer checks
+     * keep using OIDC_ISSUER.
+     */
+    OIDC_INTERNAL_URL: optionalUrl,
   })
   .superRefine((cfg, ctx) => {
     if (cfg.NODE_ENV === 'production') {
@@ -90,7 +97,12 @@ const EnvSchema = z
           ctx.addIssue({ code: 'custom', path: [key], message: 'required in production' });
       }
       // Session cookies are Secure in production, so every browser-facing URL must be HTTPS.
-      for (const key of ['APP_ORIGIN', 'OIDC_ISSUER', 'OIDC_REDIRECT_URI'] as const) {
+      for (const key of [
+        'APP_ORIGIN',
+        'OIDC_ISSUER',
+        'OIDC_REDIRECT_URI',
+        'OIDC_INTERNAL_URL',
+      ] as const) {
         const value = cfg[key];
         if (value && !value.startsWith('https://'))
           ctx.addIssue({ code: 'custom', path: [key], message: 'must use https in production' });

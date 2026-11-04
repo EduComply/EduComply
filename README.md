@@ -37,7 +37,13 @@ EduComply/
 │       ├── lib/api.ts       typed API client
 │       ├── navigation.ts    learner and admin navigation
 │       └── styles/          design tokens and global styles
-├── docs/                    architecture and design notes
+├── tools/dev/               npm run dev supervisor, doctor and Docker helpers (+ tests)
+├── infra/keycloak/          development realm (imported on first Keycloak start)
+├── docs/                    architecture, development runbook and design notes
+├── .github/workflows/       GitHub Actions CI (ci.yml)
+├── docker-compose.yml       Redis + Keycloak (+ backend/frontend with profile "app")
+├── .dockerignore            keeps .env, node_modules and build output out of images
+├── .gitleaks.toml           secret-scanning rules used by CI
 ├── .env.example             environment template (copy to .env)
 ├── eslint.config.js         shared ESLint flat config
 └── package.json             npm workspaces and root scripts
@@ -45,9 +51,11 @@ EduComply/
 
 ## Prerequisites
 
-- Node.js **20.19 or newer** (developed on Node 26)
+- Node.js **24 LTS** recommended (CI and the Docker images use Node 24; minimum 20.19)
 - npm 10+
 - Git
+- Docker Desktop (Compose v2): Redis and Keycloak always run in Docker; optionally the whole app
+- A Neon PostgreSQL project (pooled and direct connection strings)
 
 ## Setup
 
@@ -65,6 +73,8 @@ npm run db:migrate:deploy         # apply committed migrations (non-destructive;
 npm run db:seed                   # create LEARNER / ADMIN / REVIEWER roles (idempotent)
 npm run dev                       # preflight checks, then frontend + backend; Ctrl+C stops both
 ```
+
+Prefer containers? `npm run docker:up` runs the **complete application** (frontend, backend, Redis, Keycloak) in Docker on the same URLs; see [Docker](#docker-complete-application). Use either `npm run dev` or the Docker stack, not both at once.
 
 Trouble starting? Run `npm run dev:doctor` — it diagnoses ports, Docker, Redis, Keycloak and Neon without changing anything. See [docs/development.md](docs/development.md).
 
@@ -85,6 +95,11 @@ The landing page shows **API: online** when the frontend can reach the backend.
 | `npm run dev:deps:stop` | Stop this project's containers (volumes kept; other projects untouched)                                          |
 | `npm run dev:stop`      | Stop EduComply dev servers started by `npm run dev` (and their orphans)                                          |
 | `npm run dev:health`    | Check a running app: liveness, readiness, frontend and proxy                                                     |
+| `npm run docker:up`     | Build and start the complete app in Docker (refuses while `npm run dev` holds 5173/3000)                         |
+| `npm run docker:stop`   | Stop the backend and frontend containers (Redis, Keycloak and all volumes kept)                                  |
+| `npm run docker:build`  | Build the backend and frontend images only                                                                       |
+| `npm run docker:logs`   | Last 100 log lines of the backend and frontend containers                                                        |
+| `npm run docker:ps`     | Status and health of every EduComply container                                                                   |
 | `npm run build`         | Compile backend to `backend/dist`, bundle frontend to `frontend/dist`                                            |
 | `npm start`             | Run the compiled backend                                                                                         |
 | `npm run lint`          | ESLint (zero warnings allowed)                                                                                   |
@@ -96,7 +111,7 @@ The landing page shows **API: online** when the frontend can reach the backend.
 | `npm run test:redis`    | Live Redis tests (needs Redis at `REDIS_URL`; test keys deleted)                                                 |
 | `npm run test:keycloak` | Live OIDC tests (needs Keycloak + Redis; temporary Keycloak user removed)                                        |
 | `npm run test:e2e`      | Live full stack: Keycloak login → Neon user sync/roles/audit → Redis session → admin API (DB writes rolled back) |
-| `npm run redis:up`      | Start local Redis (`docker compose up -d redis`)                                                                 |
+| `npm run redis:up`      | Start local Redis only (`npm run dev:deps` starts Redis and Keycloak)                                            |
 | `npm run redis:status`  | Show Redis container health                                                                                      |
 | `npm run redis:down`    | Stop the Redis container (data is ephemeral; nothing removed)                                                    |
 | `npm run check`         | Format check, lint, typecheck, test and build                                                                    |
@@ -159,7 +174,7 @@ Rate limits (Redis): `/auth/*` 20/min per IP (fails closed), signed-in routes 30
 ### Local Keycloak and test identities (development only)
 
 1. `npm run auth:init-env` — writes `OIDC_*` and `KEYCLOAK_ADMIN_*` to `.env` (random secrets, never printed).
-2. `npm run keycloak:up`, then `npm run keycloak:status` until `(healthy)`. Realm `educomply`, client `educomply-api` (confidential, PKCE S256, no password grant, no self-registration). Admin console: http://localhost:8080 (credentials in your `.env`).
+2. `npm run dev:deps` (starts Redis and Keycloak and waits until both are healthy). Realm `educomply`, client `educomply-api` (confidential, PKCE S256, no password grant, no self-registration). Admin console: http://localhost:8080 (credentials in your `.env`).
 3. Create a test user — a strong password is generated and shown once:
    ```bash
    npm run kc:user -- create --username learner1 --email learner1@educomply.test --first Lea --last Learner
@@ -172,7 +187,7 @@ Rate limits (Redis): `/auth/*` 20/min per IP (fails closed), signed-in routes 30
 
 ### Verifying sign-in and sign-out in the browser
 
-1. `npm run redis:up`, `npm run keycloak:up`, then `npm run dev` (frontend http://localhost:5173, API :3000).
+1. `npm run dev:deps`, then `npm run dev` (frontend http://localhost:5173, API :3000), or `npm run docker:up`.
 2. Open http://localhost:5173 and click **Sign in with institutional account**; sign in at Keycloak.
 3. You return to http://localhost:5173/learner/dashboard. The top bar shows your name, role and **Sign out** (it reads `GET /api/v1/me`). In DevTools → Application → Cookies → `http://localhost:5173` you see `ec_session` (HttpOnly) and `ec_csrf`; DevTools → Network shows `GET /api/v1/me` → 200.
 4. Click **Sign out**: `POST /api/v1/auth/logout` (with `X-CSRF-Token`) → Keycloak logout → back to http://localhost:5173/. The top bar shows **Not signed in**, `ec_session` is gone, and `/api/v1/me` returns 401.
@@ -214,6 +229,43 @@ All configuration lives in a single `.env` at the repository root; see [.env.exa
 - The backend validates variables at startup ([backend/src/config/env.ts](backend/src/config/env.ts)) and reports only the _names_ of invalid variables, never their values.
 - Vite reads the same file but exposes only `VITE_*` variables to the browser. Never put secrets in a `VITE_*` variable.
 - Neon needs two URLs: `DATABASE_URL` (pooled, `-pooler` host) for the app and `DIRECT_URL` (non-pooled) for Prisma migrations.
+- `DATABASE_TRANSPORT=tcp` (default, port 5432) or `websocket` (Neon serverless driver over 443, for networks that block 5432); see [docs/development.md](docs/development.md#neon-connectivity).
+- `OIDC_INTERNAL_URL` is only for containers. Docker Compose sets it to `http://keycloak:8080` so the backend reaches Keycloak inside the Docker network, while browsers and token validation keep using `OIDC_ISSUER` (`http://localhost:8080/...`).
+- `.env.example` contains placeholders only; real values live in your local `.env`. Images never contain `.env` (see `.dockerignore`); Compose passes the needed values to the backend container when it starts.
+
+## Docker (complete application)
+
+```bash
+npm run dev:stop -- --include-unmanaged   # or Ctrl+C: npm run dev and Docker share ports 5173/3000
+npm run docker:up                         # build images, start redis, keycloak, backend, frontend; waits until healthy
+npm run dev:health                        # the same checks as for npm run dev
+npm run docker:stop                       # stop backend + frontend (Redis and Keycloak keep running)
+```
+
+| Service    | Built from / image               | Host port (127.0.0.1 only) | Role                                                        |
+| ---------- | -------------------------------- | -------------------------- | ----------------------------------------------------------- |
+| `frontend` | `frontend/Dockerfile` (nginx)    | 5173 → 8080                | serves the React build, proxies `/api` to `backend:3000`    |
+| `backend`  | `backend/Dockerfile` (Node 24)   | 3000                       | API; uses `redis:6379`, `keycloak:8080` and Neon (external) |
+| `redis`    | `redis:8-alpine`                 | 6379                       | sessions and rate limits                                    |
+| `keycloak` | `quay.io/keycloak/keycloak:26.4` | 8080                       | identity provider, realm `educomply`                        |
+
+- Same URLs as `npm run dev`, so the registered OIDC callback `http://localhost:5173/api/v1/auth/oidc/callback`, the same-origin `ec_session`/`ec_csrf` cookies and the Keycloak realm stay unchanged.
+- Health checks: Redis `PING`, Keycloak `/health/ready`, backend `/api/v1/health`, frontend `/`. Start order: Redis and Keycloak healthy, then the backend, then the frontend.
+- The backend container gets `DATABASE_URL`, `DATABASE_TRANSPORT` and `OIDC_*` from `.env`; the Redis and Keycloak addresses are fixed to the internal service names.
+- Every script uses `docker compose -p educomply`, so other projects' containers are never affected, and no script removes volumes.
+
+## Continuous integration (GitHub Actions)
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on pushes to `main` and `feature/project-foundation`, on pull requests into `main`, and on demand. It uses **no repository secrets** and never contacts the real Neon database.
+
+| Job           | What it does                                                                                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `quality`     | Node 24, `npm ci` (npm cache), Prettier check, ESLint, Prisma schema validation, typecheck, backend and frontend builds, backend, frontend and dev-tooling unit tests                                                           |
+| `secrets`     | Fails if any `.env` file is tracked; Gitleaks scans the full history (default rules plus Neon/PostgreSQL connection strings, [.gitleaks.toml](.gitleaks.toml)) with findings redacted                                           |
+| `docker`      | Validates Compose (with and without the `app` profile) and builds both images                                                                                                                                                   |
+| `integration` | Temporary PostgreSQL service, this repo's Redis/Keycloak Compose services and a throwaway `.env` with random secrets: migrations and seed, `test:redis`, `test:db`, `test:keycloak`, `test:e2e`, then a Docker stack smoke test |
+
+Checks CI cannot do, so run them manually: the real Neon database (`npm run dev:doctor`, `npm run test:db`, `npm run test:e2e`) and signing in through a real browser.
 
 ## Working rules
 

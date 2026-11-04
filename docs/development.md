@@ -19,11 +19,13 @@ Flags: `npm run dev -- --allow-db-offline` (start even if Neon is unreachable; s
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `npm run dev:doctor`                      | Full diagnosis: Node, `.env`, dev session, Docker, containers, port owners, Redis, Keycloak, Neon pooled + direct, HTTPS reachability | No                                                                                 |
 | `npm run dev:deps`                        | `docker compose -p educomply up -d --wait redis keycloak` (checks for foreign containers on 6379/8080 first)                          | Starts this project's containers                                                   |
-| `npm run dev:deps:stop`                   | `docker compose -p educomply stop`                                                                                                    | Stops this project's containers only; volumes kept                                 |
+| `npm run dev:deps:stop`                   | `docker compose -p educomply --profile app stop`                                                                                      | Stops this project's containers only (incl. the Docker app); volumes kept          |
 | `npm run dev`                             | Preflight + start                                                                                                                     | Stops **only** verified orphans of a previous `npm run dev`                        |
 | `npm run dev:stop`                        | Stops the processes recorded by `npm run dev`                                                                                         | Only EduComply-owned processes                                                     |
 | `npm run dev:stop -- --include-unmanaged` | Also stops EduComply dev servers started another way (e.g. a second terminal)                                                         | Only processes whose command line is this repo's Vite/tsx — your explicit approval |
-| `npm run dev:health`                      | `/api/v1/health`, `/api/v1/ready`, frontend and frontend→API proxy                                                                    | No                                                                                 |
+| `npm run dev:health`                      | `/api/v1/health`, `/api/v1/ready`, frontend and frontend→API proxy (works for `npm run dev` and the Docker stack)                     | No                                                                                 |
+| `npm run docker:up`                       | Preflight (Docker, `.env`, ports), then `docker compose -p educomply --profile app up -d --build --wait`                              | Builds and starts this project's containers; refuses while `npm run dev` runs      |
+| `npm run docker:stop`                     | `docker compose -p educomply --profile app stop frontend backend`                                                                     | Stops the app containers only; Redis, Keycloak and volumes kept                    |
 
 ## Port conflicts — what the tooling does
 
@@ -32,6 +34,7 @@ Flags: `npm run dev -- --allow-db-offline` (start even if Neon is unreachable; s
 | Orphan of a previous `npm run dev` (session file + command line both match, supervisor dead)         | automatic                     | Stopped automatically, then the port is re-checked                       |
 | A running `npm run dev`                                                                              | session file                  | Refuses; use that terminal or `npm run dev:stop`                         |
 | EduComply Vite/tsx started outside `npm run dev` (e.g. `npm run dev -w backend` in another terminal) | repo path in the command line | Refuses; you approve with `npm run dev:stop -- --include-unmanaged`      |
+| The EduComply Docker stack (`npm run docker:up`)                                                     | compose project `educomply`   | Refuses; use the stack, or `npm run docker:stop` first                   |
 | Another project's Docker container (e.g. `habit-tracker-frontend`)                                   | `docker ps` published ports   | Refuses; shows the container and `docker stop <name>` for **you** to run |
 | Any other application                                                                                | listener pid                  | Refuses; never stopped by the tooling                                    |
 
@@ -39,8 +42,37 @@ Why connecting matters: Vite binds `localhost` to **::1 only** on Windows, while
 
 ## Docker
 
+### Two ways to run the app (one at a time)
+
+|                 | `npm run dev`                           | `npm run docker:up`                              |
+| --------------- | --------------------------------------- | ------------------------------------------------ |
+| Frontend        | Vite dev server (hot reload) on 5173    | nginx serving the production build on 5173       |
+| Backend         | `tsx watch` on 3000                     | compiled `node dist/server.js` container on 3000 |
+| Redis, Keycloak | Docker (`npm run dev:deps`)             | Docker (started automatically)                   |
+| Database        | Neon (`DATABASE_TRANSPORT` from `.env`) | Neon (`DATABASE_TRANSPORT` from `.env`)          |
+| Best for        | development                             | a production-like local run, the demo fallback   |
+
+Both use **http://localhost:5173**, because the Keycloak redirect URI is registered for that port. Switching:
+
+```bash
+# npm run dev → Docker
+Ctrl+C in the npm run dev terminal     (or: npm run dev:stop -- --include-unmanaged)
+npm run docker:up
+
+# Docker → npm run dev
+npm run docker:stop
+npm run dev
+```
+
+Each command refuses (and explains why) while the other mode holds 5173/3000. Signed-in sessions survive the switch, because both modes use the same Redis.
+
+**Keycloak inside Docker.** Keycloak always issues tokens for `http://localhost:8080/realms/educomply` (fixed `KC_HOSTNAME`), the URL the browser uses. Inside the backend container `localhost` is the container itself, so Compose sets `OIDC_INTERNAL_URL=http://keycloak:8080`: server-to-server requests (discovery, token exchange, keys, logout) go to the `keycloak` service, while the issuer, audience and signature checks still use the public issuer.
+
+### Containers and volumes
+
 - `docker-compose.yml` has an explicit project name (`educomply`), no global `container_name`, ports bound to `127.0.0.1`, and health checks for Redis (`redis-cli ping`) and Keycloak (`/health/ready`).
 - All commands pass `-p educomply`, so they never stop another project's containers. Volumes are never removed (only `npm run keycloak:reset`, which you run deliberately, deletes the Keycloak volume).
+- The backend and frontend images are built from the repository root (one npm lockfile). They contain no `.env`, run as non-root users, and the backend image only holds production dependencies plus the compiled code.
 - Another project on our ports: `docker ps --filter publish=5173` (or 3000/6379/8080) shows it; stop just that container with `docker stop <name>`; restart it later with `docker start <name>`.
 
 ## Neon connectivity
@@ -100,7 +132,7 @@ No local database fallback exists.
 
 **Day before:** on the evaluation network run `npm run dev:doctor`. If it recommends `DATABASE_TRANSPORT=websocket`, set it in `.env` and run the doctor again. If neither transport works there, plan to use a phone hotspot. Run any pending migrations beforehand from a network that allows 5432.
 
-**Start (≈2 minutes):**
+**Start with `npm run dev` (≈2 minutes):**
 
 ```bash
 # 1. Docker Desktop running ("Engine running")
@@ -111,10 +143,21 @@ npm run dev                 # starts both servers; leave this terminal open
 npm run dev:health          # liveness, readiness (DB + Redis), frontend and proxy all ✔
 ```
 
+**Or start in Docker** (production build; use this if `npm run dev` misbehaves):
+
+```bash
+npm run docker:up           # builds on the first run (several minutes), then starts in about a minute
+npm run dev:health
+```
+
 **Walkthrough:** http://localhost:5173 → **Sign in** → learner `learner1` (Keycloak) → dashboard shows your name; open a protected page; **Log out**. Then sign in as an administrator (`npm run db:grant-role -- --email <admin email> --role ADMIN --reason "Sprint 1 demo"` beforehand) → `/admin/users` lists real users. A learner opening `/admin` sees "You don't have access".
 
 **Redis sessions:** after signing in, `npm run dev:health` → readiness `redis: up`; sign-out clears the `ec_session` cookie.
 
 **If the network blocks Neon during the demo:** set `DATABASE_TRANSPORT=websocket` (if the doctor shows WebSocket ✔) and restart `npm run dev`; otherwise switch the laptop to the hotspot, wait for `npm run dev:doctor` to show Neon ✔ (no restart needed; readiness recovers automatically). Authentication, roles and TLS are unchanged — there is no bypass mode.
 
-**Stop:** Ctrl+C in the `npm run dev` terminal, then optionally `npm run dev:deps:stop`.
+**Stop:** Ctrl+C in the `npm run dev` terminal (or `npm run docker:stop`), then optionally `npm run dev:deps:stop`.
+
+## Continuous integration
+
+GitHub Actions ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) runs four jobs: `quality` (format, lint, Prisma validation, typecheck, builds, unit tests), `secrets` (no tracked `.env`, Gitleaks over the full history), `docker` (Compose validation, image builds) and `integration`. The integration job uses a temporary PostgreSQL service and this repository's Redis/Keycloak Compose services with a throwaway `.env` (random secrets, never printed). It runs migrations and seed, the live Redis/DB/Keycloak/e2e suites and a Docker stack smoke test. No repository secrets are used and the real Neon database is never contacted. Before pushing, `npm run check` runs the same quality checks locally.

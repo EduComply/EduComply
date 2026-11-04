@@ -41,6 +41,7 @@ export function createIdentityProvider(): IdentityProvider {
     redirectUri: env.OIDC_REDIRECT_URI!,
     postLogoutRedirectUri: env.postLogoutRedirectUri,
     scopes: env.OIDC_SCOPES,
+    ...(env.OIDC_INTERNAL_URL ? { internalUrl: env.OIDC_INTERNAL_URL } : {}),
   });
 }
 

@@ -286,6 +286,16 @@ async function doctor(): Promise<number> {
       });
     }
     (await depsPortsOwnedByUs()).forEach(print);
+    for (const name of ['backend', 'frontend']) {
+      const s = services.find((x) => x.service === name && x.state === 'running');
+      if (s) {
+        print({
+          name: `Container ${name} (Docker stack)`,
+          status: s.health === 'healthy' ? 'ok' : 'warn',
+          detail: `${s.state}${s.health ? ` (${s.health})` : ''} — npm run dev cannot run at the same time`,
+        });
+      }
+    }
   }
 
   for (const service of ['frontend', 'backend'] as const) {
@@ -394,9 +404,90 @@ async function depsUp(): Promise<number> {
   });
 }
 
+/** Runs `docker compose -p educomply …` with inherited output; resolves to the exit code. */
+function compose(args: string[]): Promise<number> {
+  const child = spawn('docker', ['compose', '-p', COMPOSE_PROJECT, ...args], {
+    cwd: REPO_ROOT,
+    stdio: 'inherit',
+    windowsHide: true,
+  });
+  return new Promise((resolve) => child.once('exit', (code) => resolve(code ?? 1)));
+}
+
+/**
+ * Builds and starts the complete application in containers (profile "app"). It uses the
+ * same ports as `npm run dev` (OIDC callbacks depend on 5173), so it refuses while
+ * `npm run dev` or anything else holds them — it never stops other processes itself.
+ */
+async function dockerUp(): Promise<number> {
+  loadEnv();
+  console.log('EduComply Docker stack — preflight checks');
+  const docker = await dockerAvailable();
+  print(docker);
+  if (docker.status !== 'ok') return 1;
+  const results: CheckResult[] = [await checkEnv(), ...(await depsPortsOwnedByUs())];
+
+  const session = readSession();
+  if (session && isAlive(session.supervisorPid)) {
+    results.push({
+      name: 'npm run dev',
+      status: 'fail',
+      detail: `running (pid ${session.supervisorPid}) on the same ports 5173/3000`,
+      fix: 'Stop it first: Ctrl+C in its terminal, or npm run dev:stop',
+    });
+  }
+  for (const service of ['frontend', 'backend'] as const) {
+    const i = await inspectPort(service);
+    const ownStack =
+      i.containers.length > 0 &&
+      i.containers.every((c) => c.project === COMPOSE_PROJECT) &&
+      i.owners.length === 0;
+    if (!i.probe.inUse || ownStack) {
+      results.push({
+        name: `Port ${i.port} (${service})`,
+        status: 'ok',
+        detail: ownStack ? 'held by this Docker stack (will be updated)' : 'free',
+      });
+    } else results.push(explainConflict(i));
+  }
+  results.forEach(print);
+  if (results.some((r) => r.status === 'fail')) {
+    console.log(`\n${ICON.fail} Not starting: fix the problem(s) above.`);
+    return 1;
+  }
+
+  console.log('\nBuilding and starting redis, keycloak, backend, frontend (project "educomply")…');
+  const code = await compose([
+    '--profile',
+    'app',
+    'up',
+    '-d',
+    '--build',
+    '--wait',
+    '--wait-timeout',
+    '300',
+  ]);
+  if (code !== 0) {
+    console.log(`${ICON.fail} The stack did not become healthy. Check: npm run docker:logs`);
+    return code;
+  }
+  console.log(`${ICON.ok} EduComply is running in Docker:`);
+  console.log(`    Portal    http://localhost:${PORTS.frontend}`);
+  console.log(`    API       http://localhost:${PORTS.backend}/api/v1/health`);
+  console.log(`    Keycloak  http://localhost:${PORTS.keycloak}`);
+  console.log('  Check: npm run dev:health   Stop: npm run docker:stop');
+  return 0;
+}
+
+/** Stops only the application containers; Redis and Keycloak (and all volumes) are kept. */
+function dockerStop(): Promise<number> {
+  return compose(['--profile', 'app', 'stop', 'frontend', 'backend']);
+}
+
 async function depsStop(): Promise<number> {
   // `stop` (not `down -v`): containers and the Keycloak volume are kept; other projects untouched.
-  const child = spawn('docker', ['compose', '-p', COMPOSE_PROJECT, 'stop'], {
+  // Includes the app containers (profile "app"), which cannot run without Redis and Keycloak.
+  const child = spawn('docker', ['compose', '-p', COMPOSE_PROJECT, '--profile', 'app', 'stop'], {
     cwd: REPO_ROOT,
     stdio: 'inherit',
     windowsHide: true,
@@ -505,6 +596,8 @@ const commands: Record<string, () => Promise<number>> = {
   'deps-stop': depsStop,
   stop,
   health,
+  'docker-up': dockerUp,
+  'docker-stop': dockerStop,
 };
 
 const handler = commands[command];

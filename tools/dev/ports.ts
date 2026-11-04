@@ -8,18 +8,32 @@ export interface PortProbe {
   ipv6: boolean;
 }
 
-function canConnect(host: string, port: number, timeoutMs: number): Promise<boolean> {
+type ConnectResult = 'open' | 'closed' | 'timeout';
+
+function connect(host: string, port: number, timeoutMs: number): Promise<ConnectResult> {
   return new Promise((resolve) => {
     const socket = net.connect({ host, port });
-    const done = (result: boolean) => {
+    const done = (result: ConnectResult) => {
       clearTimeout(timer);
       socket.destroy();
       resolve(result);
     };
-    const timer = setTimeout(() => done(false), timeoutMs);
-    socket.once('connect', () => done(true));
-    socket.once('error', () => done(false));
+    const timer = setTimeout(() => done('timeout'), timeoutMs);
+    socket.once('connect', () => done('open'));
+    socket.once('error', () => done('closed'));
   });
+}
+
+/**
+ * A free loopback port is refused immediately, so a timeout means something holds the port
+ * but is slow to answer (e.g. Docker Desktop's port proxy under load). One longer retry,
+ * then a timeout counts as "in use": reporting a busy port as free would let Vite start on
+ * [::1] next to a container on 127.0.0.1.
+ */
+async function canConnect(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  const first = await connect(host, port, timeoutMs);
+  if (first !== 'timeout') return first === 'open';
+  return (await connect(host, port, timeoutMs * 4)) !== 'closed';
 }
 
 /**
