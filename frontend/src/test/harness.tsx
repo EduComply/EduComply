@@ -30,13 +30,22 @@ export const json = (status: number, body: unknown) =>
 export const unauthorized = () =>
   json(401, { code: 'SESSION_EXPIRED', status: 401, title: 'Unauthorized', type: 'x' });
 
-/** Replaces global fetch with a router keyed by path. Unknown paths fail the test. */
-export function mockFetch(routes: Record<string, () => Response | Promise<Response>>) {
-  const fn = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
-    const path = typeof input === 'string' ? input : input.toString();
-    const handler = routes[path];
-    if (!handler) throw new Error(`unexpected fetch ${path}`);
-    return handler();
+export type RouteHandler = (
+  url: URL,
+  init: RequestInit | undefined,
+) => Response | Promise<Response>;
+
+/**
+ * Replaces global fetch with a router. Keys are paths: an exact "path?query" key wins,
+ * otherwise the path without the query string is used. Unknown paths fail the test.
+ */
+export function mockFetch(routes: Record<string, RouteHandler>) {
+  const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const raw = typeof input === 'string' ? input : input.toString();
+    const url = new URL(raw, 'http://localhost');
+    const handler = routes[`${url.pathname}${url.search}`] ?? routes[url.pathname];
+    if (!handler) throw new Error(`unexpected fetch ${raw}`);
+    return handler(url, init);
   });
   vi.stubGlobal('fetch', fn);
   return fn;

@@ -1,6 +1,20 @@
+import type { ReactElement } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { RequireAuth } from '@/auth/RequireAuth';
 import { AppShell } from '@/components/layout/AppShell';
+import { AdminLayout } from '@/features/admin/AdminLayout';
+import { AdminDashboardPage } from '@/features/admin/pages/AdminDashboardPage';
+import {
+  CertificatesPage,
+  CoursesPage,
+  MonitoringPage,
+  QuestionBanksPage,
+  ReportsPage,
+  VideosPage,
+} from '@/features/admin/pages/ContentPages';
+import { LearnersPage } from '@/features/admin/pages/LearnersPage';
+import { UserDetailPage } from '@/features/admin/pages/UserDetailPage';
+import { UsersPage } from '@/features/admin/pages/UsersPage';
 import { AssessmentsPage } from '@/features/learner/pages/AssessmentsPage';
 import { CalendarPage } from '@/features/learner/pages/CalendarPage';
 import { CoursePlayerPage } from '@/features/learner/pages/CoursePlayerPage';
@@ -11,10 +25,12 @@ import { QuizPage } from '@/features/learner/pages/QuizPage';
 import { ResultPage } from '@/features/learner/pages/ResultPage';
 import { SettingsPage } from '@/features/learner/pages/SettingsPage';
 import { TrainingPage } from '@/features/learner/pages/TrainingPage';
-import { adminNav, learnerNav, learnerPageTitles } from '@/navigation';
+import { learnerNav, learnerPageTitles } from '@/navigation';
 import { LandingPage } from '@/pages/LandingPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
-import { PlaceholderPage } from '@/pages/PlaceholderPage';
+
+/** ADMIN-only page inside the admin portal (REVIEWERs see the access-denied screen). */
+const adminOnly = (page: ReactElement) => <RequireAuth roles={['ADMIN']}>{page}</RequireAuth>;
 
 export function App() {
   return (
@@ -49,23 +65,28 @@ export function App() {
         <Route path="*" element={<NotFoundPage embedded />} />
       </Route>
 
-      {/* Admin portal — screens arrive in later tasks; access is restricted now */}
+      {/* Admin portal — learner design system; ADMIN and REVIEWER only (API enforces the same) */}
       <Route
         path="/admin"
         element={
           <RequireAuth roles={['ADMIN', 'REVIEWER']}>
-            <AppShell basePath="/admin" portalLabel="Admin portal" nav={adminNav} />
+            <AdminLayout />
           </RequireAuth>
         }
       >
         <Route index element={<Navigate to="dashboard" replace />} />
-        {adminNav.map((item) => (
-          <Route
-            key={item.path}
-            path={item.path}
-            element={<PlaceholderPage title={item.label} sprint={item.sprint} />}
-          />
-        ))}
+        <Route path="dashboard" element={<AdminDashboardPage />} />
+        <Route path="users" element={adminOnly(<UsersPage />)} />
+        <Route path="users/:userId" element={adminOnly(<UserDetailPage />)} />
+        <Route path="learners" element={adminOnly(<LearnersPage />)} />
+        <Route path="courses" element={adminOnly(<CoursesPage />)} />
+        <Route path="videos" element={adminOnly(<VideosPage />)} />
+        <Route path="question-banks" element={adminOnly(<QuestionBanksPage />)} />
+        <Route path="monitoring" element={<MonitoringPage />} />
+        <Route path="certificates" element={adminOnly(<CertificatesPage />)} />
+        <Route path="reports" element={<ReportsPage />} />
+        <Route path="profile" element={<ProfilePage />} />
+        <Route path="*" element={<NotFoundPage embedded />} />
       </Route>
 
       <Route path="*" element={<NotFoundPage />} />

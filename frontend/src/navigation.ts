@@ -27,15 +27,28 @@ export const learnerPageTitles: Array<{ pattern: RegExp; title: string }> = [
   { pattern: /^\/learner\/assessments\/[^/]+$/, title: 'Interactive Assessment' },
 ];
 
-/** Admin navigation — new portal, styled to match the learner design. */
-export const adminNav: NavItem[] = [
-  { path: 'dashboard', label: 'Overview', sprint: 1 },
-  { path: 'users', label: 'Users & Roles', sprint: 1 },
-  { path: 'courses', label: 'Courses', sprint: 2 },
-  { path: 'question-banks', label: 'Question Banks', sprint: 2 },
-  { path: 'enrolments', label: 'Enrolments', sprint: 2 },
-  { path: 'monitoring', label: 'Monitoring Review', sprint: 5 },
-  { path: 'certificates', label: 'Certificates', sprint: 5 },
-  { path: 'reports', label: 'Reports', sprint: 6 },
-  { path: 'audit', label: 'Audit Log', sprint: 1 },
+/** Admin navigation item; `roles` limits who sees it (the API enforces the same rules). */
+export interface AdminNavItem extends NavItem {
+  roles: Array<'ADMIN' | 'REVIEWER'>;
+}
+
+/**
+ * Admin portal (not in Figma; built from the learner design system). ADMIN manages users
+ * and content; REVIEWER sees monitoring, reports and the activity overview (API Design §4).
+ */
+export const adminNav: AdminNavItem[] = [
+  { path: 'dashboard', label: 'Dashboard', sprint: 1, roles: ['ADMIN', 'REVIEWER'] },
+  { path: 'users', label: 'Users', sprint: 1, roles: ['ADMIN'] },
+  { path: 'learners', label: 'Learners', sprint: 1, roles: ['ADMIN'] },
+  { path: 'courses', label: 'Courses', sprint: 2, roles: ['ADMIN'] },
+  { path: 'videos', label: 'Videos', sprint: 3, roles: ['ADMIN'] },
+  { path: 'question-banks', label: 'Question Banks', sprint: 2, roles: ['ADMIN'] },
+  { path: 'monitoring', label: 'Monitoring', sprint: 5, roles: ['ADMIN', 'REVIEWER'] },
+  { path: 'certificates', label: 'Certificates', sprint: 5, roles: ['ADMIN'] },
+  { path: 'reports', label: 'Reports', sprint: 6, roles: ['ADMIN', 'REVIEWER'] },
+];
+
+export const adminPageTitles: Array<{ pattern: RegExp; title: string }> = [
+  { pattern: /^\/admin\/users\/[^/]+$/, title: 'User details' },
+  { pattern: /^\/admin\/profile$/, title: 'Administrator profile' },
 ];

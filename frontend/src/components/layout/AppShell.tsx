@@ -16,6 +16,8 @@ interface AppShellProps {
   nav: NavItem[];
   /** Top-bar titles for nested pages that are not sidebar items. */
   pageTitles?: Array<{ pattern: RegExp; title: string }>;
+  /** Optional label under the logo, e.g. "Administrator". */
+  badge?: string;
 }
 
 /**
@@ -23,7 +25,7 @@ interface AppShellProps {
  * top bar (page title, Search, Notifications, avatar). Below 960 px the sidebar becomes an
  * off-canvas drawer opened by the menu button.
  */
-export function AppShell({ basePath, portalLabel, nav, pageTitles = [] }: AppShellProps) {
+export function AppShell({ basePath, portalLabel, nav, pageTitles = [], badge }: AppShellProps) {
   const { pathname } = useLocation();
   const { state, signOut } = useAuth();
   // Open state is tied to the path it was opened on, so navigating closes it automatically.
@@ -80,6 +82,7 @@ export function AppShell({ basePath, portalLabel, nav, pageTitles = [] }: AppShe
         <Link to={`${basePath}/dashboard`} className="sidebar-logo">
           <img src={logo} alt={config.appName} />
         </Link>
+        {badge && <p className="sidebar-badge">{badge}</p>}
         <button
           type="button"
           className="sidebar-close"
@@ -165,7 +168,7 @@ export function AppShell({ basePath, portalLabel, nav, pageTitles = [] }: AppShe
             </div>
             {user && (
               <Link
-                to={`${basePath === '/admin' ? '/learner' : basePath}/profile`}
+                to={`${basePath}/profile`}
                 className="avatar"
                 aria-label={`${user.displayName} (${user.roles.join(', ')}) — view profile`}
                 title={`${user.displayName} · ${user.roles.join(', ')}`}

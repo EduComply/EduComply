@@ -102,9 +102,12 @@ describe('protected routes', () => {
   });
 
   it('lets administrators into the admin portal', async () => {
-    mockFetch({ '/api/v1/me': () => json(200, { ...ME, roles: ['ADMIN'] }) });
+    mockFetch({
+      '/api/v1/me': () => json(200, { ...ME, roles: ['ADMIN'] }),
+      '/api/v1/users': () => json(200, { data: [], page: { nextCursor: null, limit: 25 } }),
+    });
     renderApp('/admin/users');
-    expect(await screen.findByRole('heading', { level: 1, name: 'Users & Roles' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Users' })).toBeTruthy();
   });
 });
 
