@@ -1,0 +1,251 @@
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--ec-font-sans);
+  font-size: var(--ec-text-md);
+  line-height: 1.5;
+  color: var(--ec-text);
+  background: var(--ec-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--ec-primary);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ec-focus-ring);
+  border-radius: var(--ec-radius-sm);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ── App shell ─────────────────────────────────────────────────── */
+.shell {
+  display: grid;
+  grid-template-columns: var(--ec-sidebar-width) 1fr;
+  min-height: 100%;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-space-6);
+  padding: var(--ec-space-6) var(--ec-space-4);
+  background: var(--ec-sidebar-bg);
+  color: var(--ec-text-on-dark);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-space-2);
+  font-weight: 700;
+  font-size: var(--ec-text-lg);
+  color: #fff;
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--ec-radius-sm);
+  background: var(--ec-accent);
+  color: var(--ec-navy-900);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nav a {
+  display: block;
+  padding: var(--ec-space-2) var(--ec-space-3);
+  border-radius: var(--ec-radius-sm);
+  color: var(--ec-text-on-dark);
+  text-decoration: none;
+  font-size: var(--ec-text-sm);
+}
+
+.nav a:hover {
+  background: rgb(255 255 255 / 0.08);
+}
+
+.nav a[aria-current='page'] {
+  background: rgb(255 255 255 / 0.16);
+  color: #fff;
+  font-weight: 600;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  font-size: var(--ec-text-xs);
+  opacity: 0.8;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--ec-topbar-height);
+  padding: 0 var(--ec-space-8);
+  background: var(--ec-surface);
+  border-bottom: 1px solid var(--ec-border);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: var(--ec-text-lg);
+}
+
+.content {
+  padding: var(--ec-space-8);
+}
+
+/* ── UI primitives ─────────────────────────────────────────────── */
+.card {
+  background: var(--ec-surface);
+  border: 1px solid var(--ec-border);
+  border-radius: var(--ec-radius-lg);
+  box-shadow: var(--ec-shadow-card);
+  padding: var(--ec-space-6);
+}
+
+.card + .card {
+  margin-top: var(--ec-space-4);
+}
+
+.card h2 {
+  margin-top: 0;
+  font-size: var(--ec-text-lg);
+}
+
+.muted {
+  color: var(--ec-text-muted);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ec-space-2);
+  padding: var(--ec-space-2) var(--ec-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--ec-radius-sm);
+  font: inherit;
+  font-size: var(--ec-text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: var(--ec-primary);
+  color: #fff;
+}
+
+.btn-accent {
+  background: var(--ec-accent);
+  color: #fff;
+}
+
+.btn-secondary {
+  background: var(--ec-surface);
+  border-color: var(--ec-border);
+  color: var(--ec-text);
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px var(--ec-space-2);
+  border-radius: 999px;
+  font-size: var(--ec-text-xs);
+  font-weight: 600;
+}
+
+.badge-success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge-danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.badge-neutral {
+  background: var(--ec-blue-50);
+  color: var(--ec-navy-800);
+}
+
+/* ── Landing ───────────────────────────────────────────────────── */
+.landing {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: var(--ec-space-8);
+}
+
+.landing .card {
+  max-width: 520px;
+  width: 100%;
+  text-align: center;
+}
+
+.landing-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--ec-space-3);
+  margin-top: var(--ec-space-6);
+}
+
+@media (max-width: 768px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .sidebar-footer {
+    display: none;
+  }
+}

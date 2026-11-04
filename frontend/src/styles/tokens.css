@@ -1,0 +1,61 @@
+/*
+ * EduComply design tokens — derived from the Figma file
+ * "EduComply — Learner Portal (Recreated)".
+ * Values are approximations read from the file preview; replace them with the
+ * exact Figma styles when Dev Mode / exported tokens are available.
+ */
+:root {
+  /* Brand */
+  --ec-navy-900: #0f1f5c;
+  --ec-navy-800: #1e3a8a;
+  --ec-blue-600: #2563eb;
+  --ec-blue-50: #eff6ff;
+  --ec-teal-500: #14b8a6;
+  --ec-teal-50: #e6f7f5;
+
+  /* Status (assessment results, progress bars) */
+  --ec-success: #16a34a;
+  --ec-warning: #f59e0b;
+  --ec-danger: #dc2626;
+  --ec-info: #0ea5e9;
+
+  /* Neutrals */
+  --ec-bg: #f5f7fb;
+  --ec-surface: #ffffff;
+  --ec-border: #e2e8f0;
+  --ec-text: #0f172a;
+  --ec-text-muted: #64748b;
+  --ec-text-on-dark: #e2e8f0;
+
+  /* Semantic */
+  --ec-primary: var(--ec-blue-600);
+  --ec-accent: var(--ec-teal-500);
+  --ec-sidebar-bg: linear-gradient(180deg, var(--ec-navy-800) 0%, var(--ec-navy-900) 100%);
+  --ec-focus-ring: 0 0 0 3px rgb(37 99 235 / 0.45);
+
+  /* Typography */
+  --ec-font-sans:
+    'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --ec-text-xs: 0.75rem;
+  --ec-text-sm: 0.875rem;
+  --ec-text-md: 1rem;
+  --ec-text-lg: 1.125rem;
+  --ec-text-xl: 1.5rem;
+  --ec-text-2xl: 2rem;
+
+  /* Spacing, radius, elevation */
+  --ec-space-1: 0.25rem;
+  --ec-space-2: 0.5rem;
+  --ec-space-3: 0.75rem;
+  --ec-space-4: 1rem;
+  --ec-space-6: 1.5rem;
+  --ec-space-8: 2rem;
+  --ec-radius-sm: 6px;
+  --ec-radius-md: 10px;
+  --ec-radius-lg: 14px;
+  --ec-shadow-card: 0 1px 2px rgb(15 23 42 / 0.06), 0 1px 3px rgb(15 23 42 / 0.08);
+
+  /* Layout */
+  --ec-sidebar-width: 240px;
+  --ec-topbar-height: 64px;
+}
