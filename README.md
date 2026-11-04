@@ -295,6 +295,7 @@ Ten learner screens implemented from the Figma file (frames `1:2`–`1:11`) with
 
 ## Documentation
 
+- [docs/sprint1-evaluation.md](docs/sprint1-evaluation.md) — Sprint 1 evaluation guide and 5–7 minute demo script
 - [docs/development.md](docs/development.md) — dev workflow, port/Docker conflicts, Neon connectivity, demo runbook
 - [docs/architecture.md](docs/architecture.md) — modular monolith, module map, Sprint 1 branch plan
 - [docs/design/figma-learner-portal.md](docs/design/figma-learner-portal.md) — verified Figma tokens, screen→route map and deliberate deviations
