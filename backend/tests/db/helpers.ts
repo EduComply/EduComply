@@ -14,6 +14,7 @@ class RollbackSignal extends Error {
  */
 export async function inRollback(
   fn: (tx: Prisma.TransactionClient) => Promise<void>,
+  timeoutMs = 25_000,
 ): Promise<void> {
   try {
     await getPrisma().$transaction(
@@ -21,7 +22,7 @@ export async function inRollback(
         await fn(tx);
         throw new RollbackSignal();
       },
-      { timeout: 25_000, maxWait: 10_000 },
+      { timeout: timeoutMs, maxWait: 15_000 },
     );
   } catch (err) {
     if (!(err instanceof RollbackSignal)) throw err;

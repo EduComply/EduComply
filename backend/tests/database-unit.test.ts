@@ -1,3 +1,5 @@
+import { PrismaNeon, PrismaNeonHttp } from '@prisma/adapter-neon';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { describe, expect, it } from 'vitest';
 import { Prisma } from '../src/generated/prisma/client.js';
 import { hashIp } from '../src/modules/audit/infrastructure/auditRepository.js';
@@ -8,8 +10,10 @@ import { withVerifiedTls } from '../src/shared/infrastructure/database/sslmode.j
 import {
   DatabaseNotConfiguredError,
   databaseErrorCode,
+  isConnectionFailure,
   toHttpError,
 } from '../src/shared/infrastructure/database/errors.js';
+import { createAdapter } from '../src/shared/infrastructure/database/prisma.js';
 
 const known = (code: string) =>
   new Prisma.PrismaClientKnownRequestError('secret detail host=db.example', {
@@ -97,5 +101,61 @@ describe('withVerifiedTls (explicit certificate verification for pg)', () => {
     ]) {
       expect(withVerifiedTls(url)).toBe(url);
     }
+  });
+});
+
+describe('database transport (DATABASE_TRANSPORT)', () => {
+  const url = 'postgresql://u:p@ep-example-pooler.neon.tech/db?sslmode=require';
+
+  it('defaults to TCP and accepts only tcp | websocket', () => {
+    expect(parseEnv({}).DATABASE_TRANSPORT).toBe('tcp');
+    expect(parseEnv({ DATABASE_TRANSPORT: 'websocket' }).DATABASE_TRANSPORT).toBe('websocket');
+    expect(() => parseEnv({ DATABASE_TRANSPORT: 'http' })).toThrowError(/DATABASE_TRANSPORT/);
+  });
+
+  it('selects the pg adapter for tcp and the Neon WebSocket adapter for websocket', () => {
+    expect(createAdapter(url, 'tcp')).toBeInstanceOf(PrismaPg);
+    const ws = createAdapter(url, 'websocket');
+    expect(ws).toBeInstanceOf(PrismaNeon);
+    // PrismaNeon (WebSocket Pool) supports interactive transactions; PrismaNeonHttp does not.
+    expect(ws).not.toBeInstanceOf(PrismaNeonHttp);
+  });
+});
+
+describe('connection failures map to a sanitized 503', () => {
+  it.each([
+    [
+      'WebSocket error event (blocked / refused / TLS rejected)',
+      new Event('error'),
+      'DB_WEBSOCKET_FAILED',
+    ],
+    [
+      'connect timeout',
+      new Error('Connection terminated due to connection timeout'),
+      'DB_CONNECT_TIMEOUT',
+    ],
+    [
+      'pool connect timeout',
+      new Error('timeout exceeded when trying to connect'),
+      'DB_CONNECT_TIMEOUT',
+    ],
+    ['connection lost', new Error('Connection terminated unexpectedly'), 'DB_CONNECTION_LOST'],
+    [
+      'refused',
+      Object.assign(new Error('connect ECONNREFUSED 10.0.0.1:5432'), { code: 'ECONNREFUSED' }),
+      'ECONNREFUSED',
+    ],
+  ])('%s', (_label, err, code) => {
+    expect(isConnectionFailure(err)).toBe(true);
+    const http = toHttpError(err);
+    expect(http?.status).toBe(503);
+    expect(JSON.stringify(http?.toProblem())).not.toMatch(/10\.0\.0\.1|5432/);
+    expect(databaseErrorCode(err)).toBe(code);
+  });
+
+  it('does not treat ordinary errors or non-error events as connection failures', () => {
+    expect(isConnectionFailure(new Error('boom'))).toBe(false);
+    expect(isConnectionFailure(new Event('close'))).toBe(false);
+    expect(toHttpError(new Error('Connection pool is great'))).toBeUndefined();
   });
 });

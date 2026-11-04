@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { checkKeycloak, checkRedis, parseDockerPs, parsePublishedPorts } from './deps.js';
 import { checkEnv, missingKeys, REQUIRED_KEYS } from './env.js';
-import { diagnoseDatabase, maskHost } from './neon.js';
+import { classifyWebSocketError, diagnoseDatabase, diagnoseWebSocket, maskHost } from './neon.js';
 import { probePort, parseLsofListeners, parseNetstatListeners } from './ports.js';
 import { explainConflict, inspectPort } from './preflight.js';
 import {
@@ -438,5 +438,39 @@ describe('unrelated processes are never signalled', () => {
     } finally {
       victim.kill();
     }
+  });
+});
+
+describe('Neon WebSocket transport diagnosis', () => {
+  it('reports configuration problems without connecting', async () => {
+    expect((await diagnoseWebSocket(undefined)).diagnosis).toBe('not_configured');
+    expect((await diagnoseWebSocket('mysql://u:p@h/db')).diagnosis).toBe('invalid_url');
+  });
+
+  it('classifies an unresolvable host as dns_error and never echoes credentials', async () => {
+    const r = await diagnoseWebSocket('postgresql://u:topsecret@db.educomply.invalid/db', {
+      timeoutMs: 3_000,
+    });
+    expect(r.diagnosis).toBe('dns_error');
+    expect(JSON.stringify(r)).not.toContain('topsecret');
+  });
+
+  it('classifies a refused WebSocket (driver ErrorEvent) as ws_failed', async () => {
+    // localhost resolves, but nothing serves wss://127.0.0.1/v2 here.
+    const r = await diagnoseWebSocket('postgresql://u:p@127.0.0.1/db', { timeoutMs: 3_000 });
+    expect(r.diagnosis).toBe('ws_failed');
+    expect(r.stage).toBe('websocket');
+  });
+
+  it.each([
+    [new Event('error'), 'ws_failed'],
+    [new Error('Connection terminated due to connection timeout'), 'ws_failed'],
+    [Object.assign(new Error('password authentication failed'), { code: '28P01' }), 'auth_failed'],
+    [Object.assign(new Error('db'), { code: '3D000' }), 'database_missing'],
+    [new Error('Your endpoint is disabled. Enable it in the console'), 'compute_unavailable'],
+    [new Error('Query read timeout'), 'query_timeout'],
+    [new Error('other'), 'error'],
+  ])('classifies %s', (err, diagnosis) => {
+    expect(classifyWebSocketError(err).diagnosis).toBe(diagnosis);
   });
 });

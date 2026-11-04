@@ -22,6 +22,7 @@ export type DbDiagnosis =
   | 'database_missing'
   | 'compute_unavailable'
   | 'query_timeout'
+  | 'ws_failed'
   | 'error';
 
 export interface DbResult {
@@ -54,6 +55,8 @@ export const DIAGNOSIS_HELP: Record<DbDiagnosis, string> = {
     'Neon reports the compute endpoint as disabled/suspended or over quota. Check the project in the Neon console.',
   query_timeout:
     'Connected but the test query did not finish in time (Neon cold start or overload). Retry shortly.',
+  ws_failed:
+    'The WebSocket to Neon (wss://…/v2 on port 443) could not be opened: blocked by a firewall/proxy, refused, or its TLS certificate was rejected.',
   error: 'Unexpected database error. See the code shown.',
 };
 
@@ -227,6 +230,87 @@ export async function diagnoseDatabase(
     return result('error', 'query', { code: e.code ?? 'ERROR', host: shown });
   } finally {
     await client.end().catch(() => undefined);
+  }
+}
+
+/** Classifies an error from the Neon serverless driver (WebSocket transport). */
+export function classifyWebSocketError(err: unknown): { diagnosis: DbDiagnosis; code: string } {
+  // A failed WebSocket surfaces as a bare DOM ErrorEvent without message or code.
+  if (typeof Event !== 'undefined' && err instanceof Event) {
+    return { diagnosis: 'ws_failed', code: 'WS_ERROR' };
+  }
+  const e = err as { code?: string; message?: string };
+  const message = (e.message ?? '').toLowerCase();
+  if (e.code === '28P01' || e.code === '28000') return { diagnosis: 'auth_failed', code: e.code };
+  if (e.code === '3D000') return { diagnosis: 'database_missing', code: e.code };
+  if (
+    /endpoint .*(disabled|suspended)|compute time quota|exceeded the data transfer quota/.test(
+      message,
+    )
+  ) {
+    return { diagnosis: 'compute_unavailable', code: e.code ?? 'NEON' };
+  }
+  if (/connection timeout|timeout exceeded when trying to connect/.test(message)) {
+    return { diagnosis: 'ws_failed', code: 'WS_TIMEOUT' };
+  }
+  if (/timeout/.test(message)) return { diagnosis: 'query_timeout', code: 'TIMEOUT' };
+  return { diagnosis: 'error', code: e.code ?? 'ERROR' };
+}
+
+/**
+ * Diagnoses the WebSocket transport (DATABASE_TRANSPORT=websocket): DNS, then a real
+ * `SELECT 1` through the Neon serverless driver over wss://<host>/v2 (port 443, certificate
+ * verified by Node's WebSocket). Reaching HTTPS is NOT taken as proof that WebSockets work.
+ */
+export async function diagnoseWebSocket(
+  url: string | undefined,
+  options: { timeoutMs?: number } = {},
+): Promise<DbResult> {
+  const timeoutMs = options.timeoutMs ?? 8_000;
+  const started = Date.now();
+  const result = (diagnosis: DbDiagnosis, stage: string, extra: Partial<DbResult> = {}) => ({
+    diagnosis,
+    stage,
+    latencyMs: Date.now() - started,
+    ...extra,
+  });
+  if (!url) return result('not_configured', 'config');
+  let host: string;
+  try {
+    const parsed = new URL(url);
+    if (!/^postgres(ql)?:$/.test(parsed.protocol)) throw new Error('protocol');
+    host = parsed.hostname;
+  } catch {
+    return result('invalid_url', 'config');
+  }
+  const shown = maskHost(host);
+  try {
+    await withTimeout(lookup(host), timeoutMs, 'DNS_TIMEOUT');
+  } catch (err) {
+    return result('dns_error', 'dns', {
+      code: (err as NodeJS.ErrnoException).code ?? 'DNS',
+      host: shown,
+    });
+  }
+  const { Pool } = await import('@neondatabase/serverless');
+  const pool = new Pool({
+    connectionString: url,
+    connectionTimeoutMillis: timeoutMs,
+    query_timeout: timeoutMs,
+    max: 1,
+  });
+  pool.on('error', () => undefined);
+  try {
+    await withTimeout(pool.query('SELECT 1'), timeoutMs * 2, 'TIMEOUT');
+    return result('ok', 'query', { host: shown });
+  } catch (err) {
+    const { diagnosis, code } = classifyWebSocketError(err);
+    return result(diagnosis, diagnosis === 'ws_failed' ? 'websocket' : 'query', {
+      code,
+      host: shown,
+    });
+  } finally {
+    await pool.end().catch(() => undefined);
   }
 }
 

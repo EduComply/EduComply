@@ -40,6 +40,10 @@ const EnvSchema = z
     // Neon PostgreSQL: pooled URL for the app, direct URL for Prisma migrations.
     DATABASE_URL: optionalPostgresUrl,
     DIRECT_URL: optionalPostgresUrl,
+    // How the running app reaches Neon. "tcp": PostgreSQL protocol on port 5432 (pg driver).
+    // "websocket": Neon serverless driver over wss:// on port 443, for networks that block
+    // 5432. Migrations always use DIRECT_URL over TCP 5432.
+    DATABASE_TRANSPORT: z.enum(['tcp', 'websocket']).default('tcp'),
 
     // Comma-separated browser origins allowed by CORS. Defaults to APP_ORIGIN.
     CORS_ORIGINS: optionalString.refine(

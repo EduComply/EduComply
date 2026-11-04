@@ -45,34 +45,60 @@ Why connecting matters: Vite binds `localhost` to **::1 only** on Windows, while
 
 ## Neon connectivity
 
-The app connects to Neon over PostgreSQL (TCP **5432**) with TLS (`sslmode=require`; the `pg` driver verifies the certificate — never disable it). Some networks (campus/office Wi-Fi) block or intercept 5432.
+The app can reach Neon in two ways, selected with `DATABASE_TRANSPORT` in `.env`:
 
-`npm run dev:doctor` distinguishes:
+| `DATABASE_TRANSPORT` | Adapter                                                              | Network path                                                         | TLS                                                                                                           |
+| -------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `tcp` (default)      | `@prisma/adapter-pg`                                                 | PostgreSQL protocol, TCP **5432**                                    | `sslmode=verify-full` enforced for `pg` (certificate + host name verified)                                    |
+| `websocket`          | `@prisma/adapter-neon` (`PrismaNeon`, Neon serverless driver `Pool`) | PostgreSQL protocol tunnelled through `wss://<host>/v2`, TCP **443** | `wss://` certificate verified by Node's built-in WebSocket; driver defaults kept (`useSecureWebSocket: true`) |
 
-| Diagnosis                          | Meaning                                                                                       |
-| ---------------------------------- | --------------------------------------------------------------------------------------------- |
-| `dns_error`                        | Host name not resolvable (no internet / DNS)                                                  |
-| `tcp_timeout` / `tcp_refused`      | Port 5432 blocked or host wrong                                                               |
-| `ssl_stalled`                      | TCP opens but the PostgreSQL TLS request is never answered → a firewall/proxy intercepts 5432 |
-| `tls_failed`                       | Certificate verification failed (proxy MITM or wrong clock)                                   |
-| `auth_failed` / `database_missing` | Credentials / database name in `.env`                                                         |
-| `compute_unavailable`              | Neon endpoint disabled, suspended or over quota                                               |
-| `query_timeout`                    | Connected but slow (cold start) — retry                                                       |
+Both use the same pooled `DATABASE_URL`, Neon credentials, schema, data and pool limits, and both support
+Prisma interactive transactions (user sync, role changes and audit events). Neon's HTTP-only mode
+(`PrismaNeonHttp`) is **not** used: it cannot run interactive transactions.
 
-Runtime safeguards: connection timeout 10 s, per-query cap 30 s, TCP keep-alive, Prisma transaction wait 10 s / run 20 s (the old 2 s default caused "Unable to start a transaction in the given time" on cold starts), readiness probe 5 s. Database outages return sanitized `503` responses; error messages never include connection details.
+**Migrations always use `DIRECT_URL` over TCP 5432** (`prisma.config.ts`). On a network that blocks
+5432, `db:migrate:*` fails — run migrations from a network that allows it (e.g. a phone hotspot).
 
-**If 5432 is blocked** (doctor shows `ssl_stalled`/`tcp_timeout` and "Neon over HTTPS (443): reachable"):
+`npm run dev:doctor` tests **both** transports with a real `SELECT 1` (an HTTPS reachability check is
+not taken as proof that WebSockets work) and recommends switching when only the other one works:
 
-1. **Use another network** (phone hotspot / home Wi-Fi). Works today, no code change. Required for `db:migrate:*` in any case.
-2. **Ask IT** to allow outbound TCP 5432 to `*.neon.tech`.
-3. _(Needs approval — architecture change)_ Neon's serverless driver over **WebSockets/HTTPS (443)** via `@prisma/adapter-neon` for runtime queries. Keeps TLS and Neon auth; migrations would still need 5432 from another network.
-4. _(Needs approval)_ A local PostgreSQL container as a separate demo database (migrate + seed; users sign in again). Fully offline-capable for the database, but it is a different dataset.
+```
+✖ Neon app DB over TCP 5432 ← used by the app: tcp_timeout …
+✔ Neon app DB over WebSocket 443: connected via WebSocket (wss, 443), TLS verified …
+! Recommendation: this network blocks the configured transport (tcp) but websocket works
+    → Set DATABASE_TRANSPORT=websocket in .env and restart npm run dev.
+```
 
-The application is **not** offline-capable today: sign-in and user pages need Neon, Redis and Keycloak.
+`npm run dev` checks only the configured transport.
+
+| Diagnosis                          | Meaning                                                                                        |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `dns_error`                        | Host name not resolvable (no internet / DNS)                                                   |
+| `tcp_timeout` / `tcp_refused`      | Port 5432 blocked or host wrong                                                                |
+| `ssl_stalled`                      | TCP opens but the PostgreSQL TLS request is never answered → a firewall/proxy intercepts 5432  |
+| `tls_failed`                       | Certificate verification failed (proxy MITM or wrong clock)                                    |
+| `ws_failed`                        | WebSocket to `wss://…/v2` (443) could not be opened: blocked, refused, or certificate rejected |
+| `auth_failed` / `database_missing` | Credentials / database name in `.env`                                                          |
+| `compute_unavailable`              | Neon endpoint disabled, suspended or over quota                                                |
+| `query_timeout`                    | Connected but slow (cold start) — retry                                                        |
+
+Runtime safeguards (both transports): connection timeout 15 s, per-query cap 30 s, Prisma transaction
+wait 15 s / run 20 s, readiness probe 5 s, TCP keep-alive for `tcp`. Connection failures (refused,
+timed out, lost, failed WebSocket) return a sanitized `503` with a code such as `DB_CONNECT_TIMEOUT` or
+`DB_WEBSOCKET_FAILED`; responses and readiness never include connection details.
+
+**If the database is unreachable:**
+
+1. Run `npm run dev:doctor`. If it recommends `DATABASE_TRANSPORT=websocket`, set it in `.env` and restart `npm run dev`.
+2. If neither transport works, use another network (phone hotspot / home Wi-Fi).
+3. Ask IT to allow outbound TCP 5432 (or WebSocket upgrades on 443) to `*.neon.tech`.
+
+The application is **not** offline-capable: sign-in and user pages need Neon, Redis and Keycloak.
+No local database fallback exists.
 
 ## Demo runbook (Sprint 1 evaluation)
 
-**Day before:** on the evaluation network run `npm run dev:doctor`. If Neon shows `ssl_stalled`/`tcp_timeout`, plan to use a phone hotspot.
+**Day before:** on the evaluation network run `npm run dev:doctor`. If it recommends `DATABASE_TRANSPORT=websocket`, set it in `.env` and run the doctor again. If neither transport works there, plan to use a phone hotspot. Run any pending migrations beforehand from a network that allows 5432.
 
 **Start (≈2 minutes):**
 
@@ -89,6 +115,6 @@ npm run dev:health          # liveness, readiness (DB + Redis), frontend and pro
 
 **Redis sessions:** after signing in, `npm run dev:health` → readiness `redis: up`; sign-out clears the `ec_session` cookie.
 
-**If the network blocks Neon during the demo:** switch the laptop to the hotspot, wait for `npm run dev:doctor` to show Neon ✔ (no restart needed; readiness recovers automatically). Authentication, roles and TLS are unchanged — there is no bypass mode.
+**If the network blocks Neon during the demo:** set `DATABASE_TRANSPORT=websocket` (if the doctor shows WebSocket ✔) and restart `npm run dev`; otherwise switch the laptop to the hotspot, wait for `npm run dev:doctor` to show Neon ✔ (no restart needed; readiness recovers automatically). Authentication, roles and TLS are unchanged — there is no bypass mode.
 
 **Stop:** Ctrl+C in the `npm run dev` terminal, then optionally `npm run dev:deps:stop`.

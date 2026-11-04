@@ -14,6 +14,7 @@
     "test:db": "npm run db:generate && vitest run --config vitest.db.config.ts",
     "test:redis": "vitest run --config vitest.redis.config.ts",
     "test:keycloak": "vitest run --config vitest.keycloak.config.ts",
+    "test:e2e": "npm run db:generate && vitest run --config vitest.e2e.config.ts",
     "db:generate": "prisma generate --no-hints",
     "db:validate": "prisma validate",
     "db:status": "prisma migrate status",
@@ -27,6 +28,7 @@
     "kc:user": "tsx scripts/keycloak-user.ts"
   },
   "dependencies": {
+    "@prisma/adapter-neon": "^7.10.1",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "cookie-parser": "^1.4.7",

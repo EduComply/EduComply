@@ -5,6 +5,6 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
-    exclude: ['tests/db/**', 'tests/redis/**', 'tests/keycloak/**'],
+    exclude: ['tests/db/**', 'tests/redis/**', 'tests/keycloak/**', 'tests/e2e/**'],
   },
 });

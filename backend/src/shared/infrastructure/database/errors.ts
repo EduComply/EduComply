@@ -8,6 +8,38 @@ export class DatabaseNotConfiguredError extends Error {
   }
 }
 
+/**
+ * With DATABASE_TRANSPORT=websocket, a failed WebSocket (blocked, DNS, TLS rejected) reaches
+ * the caller as the driver's raw DOM ErrorEvent rather than a Prisma error. It carries no
+ * message or connection details.
+ */
+export function isWebSocketFailure(err: unknown): boolean {
+  return typeof Event !== 'undefined' && err instanceof Event && err.type === 'error';
+}
+
+const NETWORK_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+]);
+/** Fixed messages of pg / the Neon driver when a connection cannot be (kept) open. */
+const CONNECTION_MESSAGES =
+  /^(Connection terminated (due to connection timeout|unexpectedly)|timeout exceeded when trying to connect)/;
+
+/** Raw driver error for a connection that could not be opened or was lost (either transport). */
+export function isConnectionFailure(err: unknown): boolean {
+  if (isWebSocketFailure(err)) return true;
+  if (!(err instanceof Error)) return false;
+  const code = (err as { code?: unknown }).code;
+  return (
+    (typeof code === 'string' && NETWORK_CODES.has(code)) || CONNECTION_MESSAGES.test(err.message)
+  );
+}
+
 /** Postgres error raised by the append-only audit trigger (SQLSTATE 42501). */
 const INSUFFICIENT_PRIVILEGE = '42501';
 
@@ -46,7 +78,7 @@ export function toHttpError(err: unknown): HttpError | undefined {
     }
   }
 
-  if (err instanceof Prisma.PrismaClientInitializationError) {
+  if (err instanceof Prisma.PrismaClientInitializationError || isConnectionFailure(err)) {
     return Errors.serviceUnavailable('The database is temporarily unavailable.');
   }
 
@@ -61,6 +93,13 @@ export function databaseErrorCode(err: unknown): string | undefined {
     return meta?.driverAdapterError?.cause?.originalCode ?? err.code;
   }
   if (err instanceof Prisma.PrismaClientInitializationError) return err.errorCode ?? 'INIT';
+  if (isWebSocketFailure(err)) return 'DB_WEBSOCKET_FAILED';
+  if (err instanceof Error && /connection timeout|timeout exceeded/.test(err.message)) {
+    return 'DB_CONNECT_TIMEOUT';
+  }
+  if (err instanceof Error && err.message.startsWith('Connection terminated')) {
+    return 'DB_CONNECTION_LOST';
+  }
   const code = (err as { code?: unknown } | null)?.code;
   return typeof code === 'string' ? code : undefined;
 }

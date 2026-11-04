@@ -76,29 +76,30 @@ The landing page shows **API: online** when the frontend can reach the backend.
 
 ## Scripts (run from the repository root)
 
-| Command                 | Purpose                                                                                             |
-| ----------------------- | --------------------------------------------------------------------------------------------------- |
-| `npm run dev`           | Preflight (env, ports, Docker, Redis, Keycloak, Neon), then frontend + backend under one supervisor |
-| `npm run dev:backend`   | Same, backend only (frontend: `npm run dev:frontend`)                                               |
-| `npm run dev:doctor`    | Read-only diagnosis of the whole environment                                                        |
-| `npm run dev:deps`      | Start Redis + Keycloak (project `educomply` only) and wait until healthy                            |
-| `npm run dev:deps:stop` | Stop this project's containers (volumes kept; other projects untouched)                             |
-| `npm run dev:stop`      | Stop EduComply dev servers started by `npm run dev` (and their orphans)                             |
-| `npm run dev:health`    | Check a running app: liveness, readiness, frontend and proxy                                        |
-| `npm run build`         | Compile backend to `backend/dist`, bundle frontend to `frontend/dist`                               |
-| `npm start`             | Run the compiled backend                                                                            |
-| `npm run lint`          | ESLint (zero warnings allowed)                                                                      |
-| `npm run format`        | Prettier write                                                                                      |
-| `npm run format:check`  | Prettier check                                                                                      |
-| `npm run typecheck`     | `tsc --noEmit` in both workspaces                                                                   |
-| `npm test`              | Unit and HTTP tests in both workspaces + dev-tooling tests (no services needed)                     |
-| `npm run test:db`       | Database integration tests (needs `DATABASE_URL`; all writes rolled back)                           |
-| `npm run test:redis`    | Live Redis tests (needs Redis at `REDIS_URL`; test keys deleted)                                    |
-| `npm run test:keycloak` | Live OIDC tests (needs Keycloak + Redis; temporary Keycloak user removed)                           |
-| `npm run redis:up`      | Start local Redis (`docker compose up -d redis`)                                                    |
-| `npm run redis:status`  | Show Redis container health                                                                         |
-| `npm run redis:down`    | Stop the Redis container (data is ephemeral; nothing removed)                                       |
-| `npm run check`         | Format check, lint, typecheck, test and build                                                       |
+| Command                 | Purpose                                                                                                          |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`           | Preflight (env, ports, Docker, Redis, Keycloak, Neon), then frontend + backend under one supervisor              |
+| `npm run dev:backend`   | Same, backend only (frontend: `npm run dev:frontend`)                                                            |
+| `npm run dev:doctor`    | Read-only diagnosis of the whole environment                                                                     |
+| `npm run dev:deps`      | Start Redis + Keycloak (project `educomply` only) and wait until healthy                                         |
+| `npm run dev:deps:stop` | Stop this project's containers (volumes kept; other projects untouched)                                          |
+| `npm run dev:stop`      | Stop EduComply dev servers started by `npm run dev` (and their orphans)                                          |
+| `npm run dev:health`    | Check a running app: liveness, readiness, frontend and proxy                                                     |
+| `npm run build`         | Compile backend to `backend/dist`, bundle frontend to `frontend/dist`                                            |
+| `npm start`             | Run the compiled backend                                                                                         |
+| `npm run lint`          | ESLint (zero warnings allowed)                                                                                   |
+| `npm run format`        | Prettier write                                                                                                   |
+| `npm run format:check`  | Prettier check                                                                                                   |
+| `npm run typecheck`     | `tsc --noEmit` in both workspaces                                                                                |
+| `npm test`              | Unit and HTTP tests in both workspaces + dev-tooling tests (no services needed)                                  |
+| `npm run test:db`       | Database integration tests (needs `DATABASE_URL`; all writes rolled back)                                        |
+| `npm run test:redis`    | Live Redis tests (needs Redis at `REDIS_URL`; test keys deleted)                                                 |
+| `npm run test:keycloak` | Live OIDC tests (needs Keycloak + Redis; temporary Keycloak user removed)                                        |
+| `npm run test:e2e`      | Live full stack: Keycloak login → Neon user sync/roles/audit → Redis session → admin API (DB writes rolled back) |
+| `npm run redis:up`      | Start local Redis (`docker compose up -d redis`)                                                                 |
+| `npm run redis:status`  | Show Redis container health                                                                                      |
+| `npm run redis:down`    | Stop the Redis container (data is ephemeral; nothing removed)                                                    |
+| `npm run check`         | Format check, lint, typecheck, test and build                                                                    |
 
 ## API conventions
 

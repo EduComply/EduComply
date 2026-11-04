@@ -21,7 +21,7 @@ import {
   type CheckResult,
 } from './deps.js';
 import { checkEnv, loadEnv } from './env.js';
-import { DIAGNOSIS_HELP, diagnoseDatabase, httpsReachable } from './neon.js';
+import { DIAGNOSIS_HELP, diagnoseDatabase, diagnoseWebSocket, httpsReachable } from './neon.js';
 import { explainConflict, inspectPort } from './preflight.js';
 import {
   ancestors,
@@ -54,22 +54,32 @@ function print(r: CheckResult) {
   if (r.status !== 'ok' && r.fix) console.log(`    → ${r.fix}`);
 }
 
+type Transport = 'tcp' | 'websocket';
+
+/** The transport the app will use (DATABASE_TRANSPORT, default tcp). */
+function configuredTransport(): Transport {
+  return process.env.DATABASE_TRANSPORT === 'websocket' ? 'websocket' : 'tcp';
+}
+
 async function databaseCheck(
   label: string,
   url: string | undefined,
   timeoutMs: number,
+  transport: Transport = 'tcp',
 ): Promise<CheckResult> {
+  const diagnose = transport === 'websocket' ? diagnoseWebSocket : diagnoseDatabase;
   // One bounded retry absorbs a Neon compute waking from suspend.
-  let result = await diagnoseDatabase(url, { timeoutMs });
-  if (result.diagnosis === 'query_timeout' || result.diagnosis === 'ssl_stalled') {
-    result = await diagnoseDatabase(url, { timeoutMs });
+  let result = await diagnose(url, { timeoutMs });
+  if (['query_timeout', 'ssl_stalled', 'ws_failed'].includes(result.diagnosis)) {
+    result = await diagnose(url, { timeoutMs });
   }
+  const via = transport === 'websocket' ? 'WebSocket (wss, 443)' : 'TCP 5432';
   return {
     name: label,
     status: result.diagnosis === 'ok' ? 'ok' : 'fail',
     detail:
       result.diagnosis === 'ok'
-        ? `connected over verified TLS in ${result.latencyMs} ms (${result.host})`
+        ? `connected via ${via}, TLS verified, in ${result.latencyMs} ms (${result.host})`
         : `${result.diagnosis} at ${result.stage}${result.code ? ` [${result.code}]` : ''} — ${DIAGNOSIS_HELP[result.diagnosis]}`,
     ...(result.diagnosis === 'ok'
       ? {}
@@ -184,7 +194,12 @@ async function dev(): Promise<number> {
     skipDeps || only === 'frontend' ? null : checkKeycloak(process.env.OIDC_ISSUER),
     skipDeps || only === 'frontend'
       ? null
-      : databaseCheck('Neon PostgreSQL', process.env.DATABASE_URL, 6_000),
+      : databaseCheck(
+          `Neon PostgreSQL (DATABASE_TRANSPORT=${configuredTransport()})`,
+          process.env.DATABASE_URL,
+          configuredTransport() === 'websocket' ? 8_000 : 6_000,
+          configuredTransport(),
+        ),
   ]);
   const results = [env, ...ports.results, redis, keycloak, db].filter(
     (r): r is CheckResult => r !== null,
@@ -288,18 +303,43 @@ async function doctor(): Promise<number> {
 
   print(await checkRedis(process.env.REDIS_URL));
   print(await checkKeycloak(process.env.OIDC_ISSUER));
-  const pooled = await databaseCheck('Neon pooled (DATABASE_URL)', process.env.DATABASE_URL, 8_000);
-  print(pooled);
-  print(await databaseCheck('Neon direct (DIRECT_URL, migrations)', process.env.DIRECT_URL, 8_000));
-  if (pooled.status === 'fail') {
+  // Both transports are tested for real; the one the app uses decides ✔/✖, the other is info.
+  const transport = configuredTransport();
+  const [tcp, ws, direct] = await Promise.all([
+    databaseCheck('Neon app DB over TCP 5432', process.env.DATABASE_URL, 8_000, 'tcp'),
+    databaseCheck('Neon app DB over WebSocket 443', process.env.DATABASE_URL, 8_000, 'websocket'),
+    databaseCheck('Neon direct (DIRECT_URL, migrations, TCP 5432)', process.env.DIRECT_URL, 8_000),
+  ]);
+  const mark = (r: CheckResult, t: Transport): CheckResult =>
+    t === transport
+      ? { ...r, name: `${r.name} ← used by the app` }
+      : { ...r, status: r.status === 'ok' ? 'ok' : 'warn', fix: undefined };
+  print(mark(tcp, 'tcp'));
+  print(mark(ws, 'websocket'));
+  if (direct.status !== 'ok') {
+    direct.fix =
+      'Migrations (db:migrate:*) need a network that allows TCP 5432 (e.g. a phone hotspot).';
+  }
+  print(direct);
+  const used = transport === 'tcp' ? tcp : ws;
+  const other = transport === 'tcp' ? ws : tcp;
+  if (used.status !== 'ok' && other.status === 'ok') {
+    const switchTo = transport === 'tcp' ? 'websocket' : 'tcp';
+    print({
+      name: 'Recommendation',
+      status: 'warn',
+      detail: `this network blocks the configured transport (${transport}) but ${switchTo} works`,
+      fix: `Set DATABASE_TRANSPORT=${switchTo} in .env and restart npm run dev.`,
+    });
+  } else if (used.status !== 'ok') {
     const https = await httpsReachable(process.env.DATABASE_URL);
     print({
       name: 'Neon over HTTPS (443)',
-      status: https ? 'warn' : 'fail',
+      status: 'fail',
       detail: https
-        ? 'reachable — this network blocks PostgreSQL (5432) but not HTTPS'
+        ? 'plain HTTPS is reachable, but neither PostgreSQL (5432) nor the WebSocket upgrade gets through'
         : 'not reachable either — no internet path to Neon from this network',
-      fix: 'Switch network (phone hotspot) for now; see docs/development.md → "Neon connectivity" for supported alternatives.',
+      fix: 'Use another network (phone hotspot); see docs/development.md → "Neon connectivity".',
     });
   }
   return 0;

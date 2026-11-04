@@ -1,7 +1,8 @@
+import { PrismaNeon } from '@prisma/adapter-neon';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, type Prisma } from '../../../generated/prisma/client.js';
 import { env } from '../../../config/env.js';
-import { DatabaseNotConfiguredError } from './errors.js';
+import { DatabaseNotConfiguredError, databaseErrorCode } from './errors.js';
 import { withVerifiedTls } from './sslmode.js';
 import { errorCode, type DependencyStatus } from '../dependency.js';
 
@@ -17,16 +18,7 @@ let client: PrismaClient | undefined;
 export function getPrisma(): PrismaClient {
   if (!client) {
     if (!env.DATABASE_URL) throw new DatabaseNotConfiguredError();
-    // Bounded timeouts so a blocked or sleeping Neon endpoint fails fast instead of hanging.
-    // TLS stays on and the certificate is always verified (sslmode made explicit for pg).
-    const adapter = new PrismaPg({
-      connectionString: withVerifiedTls(env.DATABASE_URL),
-      max: 10,
-      connectionTimeoutMillis: 10_000, // new connection (DNS + TCP + TLS + auth)
-      idleTimeoutMillis: 30_000,
-      query_timeout: 30_000, // client-side cap per query
-      keepAlive: true, // detect dropped connections behind NAT/firewalls
-    });
+    const adapter = createAdapter(env.DATABASE_URL);
     client = new PrismaClient({
       adapter,
       // Query text and parameters are never logged.
@@ -40,10 +32,36 @@ export function getPrisma(): PrismaClient {
       errorFormat: 'minimal',
       // Prisma's default maxWait (2 s) is too short for a Neon compute waking from suspend
       // and caused "Unable to start a transaction in the given time". Both stay bounded.
-      transactionOptions: { maxWait: 10_000, timeout: 20_000 },
+      transactionOptions: { maxWait: 15_000, timeout: 20_000 },
     });
   }
   return client;
+}
+
+/**
+ * Bounded pool settings shared by both transports, so a blocked or sleeping Neon endpoint
+ * fails fast instead of hanging. Certificates are always verified.
+ */
+const POOL = {
+  max: 10,
+  connectionTimeoutMillis: 15_000, // new connection (DNS + TCP/WebSocket + TLS + auth)
+  idleTimeoutMillis: 30_000,
+  query_timeout: 30_000, // client-side cap per query
+} as const;
+
+export function createAdapter(
+  url: string,
+  transport: 'tcp' | 'websocket' = env.DATABASE_TRANSPORT,
+): PrismaPg | PrismaNeon {
+  if (transport === 'websocket') {
+    // Neon serverless driver: PostgreSQL protocol tunnelled through wss://<host>/v2 on 443.
+    // TLS is provided (and the certificate verified) by Node's built-in WebSocket client;
+    // the driver's defaults (useSecureWebSocket=true) are kept. Supports interactive
+    // transactions, unlike Neon's HTTP mode.
+    return new PrismaNeon({ connectionString: url, ...POOL });
+  }
+  // sslmode made explicit for pg (see sslmode.ts); keep-alive detects dropped connections.
+  return new PrismaPg({ connectionString: withVerifiedTls(url), ...POOL, keepAlive: true });
 }
 
 /** Closes the pool; safe to call when no client was created. */
@@ -62,6 +80,10 @@ export async function checkDatabase(): Promise<DependencyStatus> {
     await getPrisma().$queryRaw`SELECT 1`;
     return { status: 'up', latencyMs: Date.now() - started };
   } catch (err) {
-    return { status: 'down', latencyMs: Date.now() - started, code: errorCode(err) };
+    return {
+      status: 'down',
+      latencyMs: Date.now() - started,
+      code: databaseErrorCode(err) ?? errorCode(err),
+    };
   }
 }
