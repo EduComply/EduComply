@@ -74,7 +74,7 @@ describe('environment validation', () => {
     expect(() =>
       parseEnv({ NODE_ENV: 'production', APP_ORIGIN: 'https://portal.uni.ac.lk' }),
     ).toThrowError(
-      /^Invalid environment configuration: DATABASE_URL, REDIS_URL, OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_REDIRECT_URI$/,
+      /^Invalid environment configuration: DATABASE_URL, REDIS_URL, OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_REDIRECT_URI, AUDIT_IP_HASH_KEY$/,
     );
   });
 
@@ -89,6 +89,7 @@ describe('environment validation', () => {
         OIDC_CLIENT_ID: 'educomply-api',
         OIDC_CLIENT_SECRET: 'top-secret-value',
         OIDC_REDIRECT_URI: 'https://portal.uni.ac.lk/api/v1/auth/oidc/callback',
+        AUDIT_IP_HASH_KEY: 'k'.repeat(32),
       });
     expect(run).toThrowError(/APP_ORIGIN, OIDC_ISSUER$/);
     expect(run).not.toThrowError(/top-secret-value/);

@@ -81,6 +81,15 @@ const EnvSchema = z
      * keep using OIDC_ISSUER.
      */
     OIDC_INTERNAL_URL: optionalUrl,
+
+    /**
+     * Secret key for pseudonymising client IP addresses in audit events (HMAC-SHA-256).
+     * Without a key the IPv4 address space could be hashed exhaustively and the stored
+     * hashes reversed. Required in production; development falls back to a plain hash.
+     */
+    AUDIT_IP_HASH_KEY: optionalString.refine((v) => v === undefined || v.length >= 32, {
+      message: 'must be at least 32 characters',
+    }),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.NODE_ENV === 'production') {
@@ -91,6 +100,7 @@ const EnvSchema = z
         'OIDC_CLIENT_ID',
         'OIDC_CLIENT_SECRET',
         'OIDC_REDIRECT_URI',
+        'AUDIT_IP_HASH_KEY',
       ] as const;
       for (const key of required) {
         if (!cfg[key])
