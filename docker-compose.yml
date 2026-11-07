@@ -1,0 +1,144 @@
+# EduComply containers. One project name ("educomply") scopes every command, so other
+# Compose projects are never touched. All ports are bound to 127.0.0.1 (this machine only).
+#
+#   Dependencies only (local development with `npm run dev`):
+#     npm run dev:deps          redis + keycloak, waits until healthy
+#     npm run dev:deps:stop     stop them (volumes kept)
+#
+#   Complete application in containers (profile "app": + backend + frontend):
+#     npm run docker:up         build, start and wait until every service is healthy
+#     npm run docker:stop       stop backend + frontend (redis/keycloak keep running)
+#
+# The containerised app uses the same ports as `npm run dev` (5173 and 3000) so the
+# registered OIDC callback http://localhost:5173/api/v1/auth/oidc/callback keeps working —
+# run one or the other, never both. PostgreSQL is external (Neon). Secrets come from the
+# repository-root .env (never committed, never copied into an image).
+name: educomply
+
+services:
+  redis:
+    image: redis:8-alpine
+    command:
+      - redis-server
+      - --save
+      - ''
+      - --appendonly
+      - 'no'
+      - --maxmemory
+      - 256mb
+      # Sessions and rate-limit counters must not be silently evicted.
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - '127.0.0.1:6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4
+    # Development mode with the EduComply realm imported on first start.
+    command: ['start-dev', '--import-realm']
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-}
+      # Fixed public URL so the issuer is always http://localhost:8080/realms/educomply
+      KC_HOSTNAME: http://localhost:8080
+      KC_HTTP_PORT: '8080'
+      KC_HEALTH_ENABLED: 'true'
+      # Substituted into ${EDUCOMPLY_OIDC_CLIENT_SECRET} in the realm file at import.
+      EDUCOMPLY_OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+    ports:
+      - '127.0.0.1:8080:8080'
+    volumes:
+      # Volume on /opt/keycloak/data (exists in the image, so it inherits keycloak's ownership);
+      # the realm file is bind-mounted inside it.
+      - keycloak-data:/opt/keycloak/data
+      - ./infra/keycloak/educomply-realm.json:/opt/keycloak/data/import/educomply-realm.json:ro
+    healthcheck:
+      # The image has no curl; probe the management port (9000) with bash /dev/tcp.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"UP"' <&3
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  # ── Application (profile "app") ─────────────────────────────────────
+  backend:
+    profiles: ['app']
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: educomply-backend:local
+    environment:
+      # Local HTTP stack (http://localhost): production requires HTTPS URLs and Secure cookies.
+      NODE_ENV: development
+      PORT: '3000'
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      APP_ORIGIN: http://localhost:5173
+      # Neon (external). tcp = PostgreSQL 5432; websocket = wss on 443 for networks blocking 5432.
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_TRANSPORT: ${DATABASE_TRANSPORT:-tcp}
+      REDIS_URL: redis://redis:6379
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-educomply:}
+      # The browser and the token issuer use localhost:8080 (Keycloak's fixed KC_HOSTNAME);
+      # inside the network the backend reaches the same Keycloak as keycloak:8080.
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://localhost:8080/realms/educomply}
+      OIDC_INTERNAL_URL: http://keycloak:8080
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-educomply-api}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:5173/api/v1/auth/oidc/callback}
+      OIDC_POST_LOGOUT_REDIRECT_URI: ${OIDC_POST_LOGOUT_REDIRECT_URI:-}
+      AUDIT_IP_HASH_KEY: ${AUDIT_IP_HASH_KEY:-}
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      # Liveness only: the API must start (and report 503 readiness) even if Neon is unreachable.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
+  frontend:
+    profiles: ['app']
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: educomply-frontend:local
+    ports:
+      - '127.0.0.1:5173:8080'
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://127.0.0.1:8080/']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  # Development realm, users and sessions (survives restarts; remove to re-import the realm).
+  keycloak-data:
