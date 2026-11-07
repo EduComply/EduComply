@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { grantRole, GrantRoleError } from '../../src/modules/users/application/grantRole.js';
+import { grantRole, GrantRoleError } from '../../src/modules/users/infrastructure/grantRole.js';
 import { createUser, linkIdentity } from '../../src/modules/users/infrastructure/userRepository.js';
 import { disconnectPrisma, getPrisma } from '../../src/shared/infrastructure/database/prisma.js';
 import { asClient, inRollback, testIds } from './helpers.js';

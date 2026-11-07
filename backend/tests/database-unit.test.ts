@@ -81,6 +81,20 @@ describe('domain helpers', () => {
   it('hashes IP addresses with SHA-256', () => {
     expect(hashIp('203.0.113.7')).toMatch(/^[0-9a-f]{64}$/);
   });
+
+  it('pseudonymises IPs with a secret key (not reversible by hashing every address)', () => {
+    const key = 'a'.repeat(32);
+    const keyed = hashIp('203.0.113.7', key);
+    expect(keyed).toMatch(/^[0-9a-f]{64}$/); // still fits audit_event.ip_hash char(64)
+    expect(keyed).toBe(hashIp('203.0.113.7', key)); // stable: same IP, same value
+    expect(keyed).not.toBe(hashIp('203.0.113.7', 'b'.repeat(32))); // depends on the key
+    expect(keyed).not.toBe(hashIp('203.0.113.7', undefined)); // differs from a plain SHA-256
+  });
+
+  it('requires a strong audit IP key in production', () => {
+    expect(() => parseEnv({ AUDIT_IP_HASH_KEY: 'short' })).toThrowError(/AUDIT_IP_HASH_KEY/);
+    expect(() => parseEnv({ NODE_ENV: 'production' })).toThrowError(/AUDIT_IP_HASH_KEY/);
+  });
 });
 
 describe('withVerifiedTls (explicit certificate verification for pg)', () => {

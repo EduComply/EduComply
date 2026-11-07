@@ -18,7 +18,7 @@ import { createApp } from '../../src/app.js';
 import { createDefaultModules } from '../../src/composition.js';
 import { env } from '../../src/config/env.js';
 import { PrismaAuditQuery } from '../../src/modules/audit/infrastructure/prismaAuditQuery.js';
-import { grantRole } from '../../src/modules/users/application/grantRole.js';
+import { grantRole } from '../../src/modules/users/infrastructure/grantRole.js';
 import { PrismaUserAdmin } from '../../src/modules/users/infrastructure/prismaUserAdmin.js';
 import { PrismaUserDirectory } from '../../src/modules/users/infrastructure/prismaUserDirectory.js';
 import { disconnectPrisma, getPrisma } from '../../src/shared/infrastructure/database/prisma.js';

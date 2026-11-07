@@ -10,7 +10,7 @@
 import { userInfo } from 'node:os';
 import { parseArgs } from 'node:util';
 import { env } from '../src/config/env.js';
-import { grantRole, GrantRoleError } from '../src/modules/users/application/grantRole.js';
+import { grantRole, GrantRoleError } from '../src/modules/users/infrastructure/grantRole.js';
 import { isRoleName, ROLE_NAMES } from '../src/modules/users/domain/roles.js';
 import { databaseErrorCode } from '../src/shared/infrastructure/database/errors.js';
 import { disconnectPrisma, getPrisma } from '../src/shared/infrastructure/database/prisma.js';
