@@ -64,8 +64,17 @@ export class PrismaUserAdmin implements UserAdminService {
       if (from === input.role) return toAuthUser(user);
 
       if (from === 'ADMIN') {
-        const admins = await tx.user.count({ where: { role: { name: 'ADMIN' }, isActive: true } });
-        if (admins <= 1) throw new UserAdminError('LAST_ADMIN');
+        // Lock every active ADMIN row (in a fixed order, so concurrent changes cannot
+        // deadlock) before counting. Two simultaneous demotions are then serialised: the
+        // second re-checks the rows after the first commits and sees one admin fewer.
+        // A plain COUNT under READ COMMITTED let both succeed and left no administrator.
+        const admins = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT u.id FROM "user" u
+          JOIN "role" r ON r.id = u.role_id
+          WHERE r.name = 'ADMIN' AND u.is_active
+          ORDER BY u.id
+          FOR UPDATE OF u`;
+        if (admins.length <= 1) throw new UserAdminError('LAST_ADMIN');
       }
 
       const updated = await tx.user.update({

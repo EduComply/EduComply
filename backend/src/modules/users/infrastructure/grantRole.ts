@@ -7,7 +7,7 @@ import {
   findUserByEmail,
   setUserRole,
   type UserWithRole,
-} from '../infrastructure/userRepository.js';
+} from './userRepository.js';
 
 export class GrantRoleError extends Error {
   constructor(

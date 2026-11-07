@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
+import { env } from '../../../config/env.js';
 import type { AuditEvent, Prisma } from '../../../generated/prisma/client.js';
 import type { DbClient } from '../../../shared/infrastructure/database/prisma.js';
 import type { AuditActionName } from '../domain/auditActions.js';
@@ -13,12 +14,20 @@ export interface RecordAuditEventInput {
   /** Small, non-sensitive context. Never include tokens, passwords or raw IP addresses. */
   metadata?: Prisma.InputJsonObject;
   requestId?: string;
-  /** Raw client IP; stored only as a SHA-256 hash. */
+  /** Raw client IP; stored only as a keyed hash (see hashIp). */
   ip?: string;
 }
 
-export function hashIp(ip: string): string {
-  return createHash('sha256').update(ip).digest('hex');
+/**
+ * Pseudonymises a client IP for the audit log: HMAC-SHA-256 with AUDIT_IP_HASH_KEY, so the
+ * value cannot be reversed by hashing every possible address. Equal IPs still give equal
+ * values (useful for investigations). Without a key (development only; production requires
+ * one) a plain SHA-256 is used. Either way the result is 64 hex characters (char(64)).
+ */
+export function hashIp(ip: string, key: string | undefined = env.AUDIT_IP_HASH_KEY): string {
+  return key
+    ? createHmac('sha256', key).update(ip).digest('hex')
+    : createHash('sha256').update(ip).digest('hex');
 }
 
 /**

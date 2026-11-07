@@ -1,0 +1,2600 @@
+openapi: 3.1.0
+info:
+  title: EduComply API
+  version: 1.0.0
+  summary: Institutional video training and interactive assessment platform
+  description: |
+    REST API for the EduComply modular monolith (Node.js, Express, Clean Architecture).
+
+    * Server is authoritative for playback progress, grading and completion.
+    * Session cookie auth (backend-for-frontend). State-changing requests must send `X-CSRF-Token`.
+    * Errors use RFC 9457 Problem Details (`application/problem+json`) with a stable `code`.
+    * Lists use cursor pagination: `?limit=&cursor=` returning `{ data, page }`.
+    * Evidence-creating POSTs accept `Idempotency-Key`.
+    * Editable admin resources return `ETag`; updates send `If-Match`.
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local Docker Compose
+  - url: https://{host}/api/v1
+    description: Deployed environment
+    variables:
+      host:
+        default: educomply.example.edu
+security:
+  - sessionCookie: []
+tags:
+  - name: Auth
+  - name: Users
+  - name: Courses
+  - name: Videos
+  - name: QuestionBanks
+  - name: Assessments
+  - name: Enrolments
+  - name: Playback
+  - name: Attempts
+  - name: Monitoring
+  - name: Certificates
+  - name: Reports
+  - name: Audit
+  - name: System
+
+paths:
+  # ───────────────────────────── Auth ─────────────────────────────
+  /auth/login:
+    get:
+      tags: [Auth]
+      operationId: login
+      summary: Start institutional login (redirects to IdP)
+      security: []
+      parameters:
+        - name: returnTo
+          in: query
+          schema: { type: string, example: /dashboard }
+        - name: idp
+          in: query
+          description: Identity provider key when several are configured
+          schema: { type: string, example: university-oidc }
+      responses:
+        '302': { description: Redirect to identity provider with PKCE, state and nonce }
+  /auth/oidc/callback:
+    get:
+      tags: [Auth]
+      operationId: oidcCallback
+      summary: OIDC redirect handler; sets ec_session and ec_csrf cookies
+      security: []
+      parameters:
+        - { name: code, in: query, required: true, schema: { type: string } }
+        - { name: state, in: query, required: true, schema: { type: string } }
+      responses:
+        '302': { description: Session created; redirect to returnTo }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /auth/saml/acs:
+    post:
+      tags: [Auth]
+      operationId: samlAcs
+      summary: SAML 2.0 assertion consumer service
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [SAMLResponse]
+              properties:
+                SAMLResponse: { type: string }
+                RelayState: { type: string }
+      responses:
+        '302': { description: Session created; redirect to RelayState }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /auth/saml/metadata:
+    get:
+      tags: [Auth]
+      operationId: samlMetadata
+      summary: Service-provider metadata for the institution's IdP
+      security: []
+      responses:
+        '200':
+          description: SP metadata
+          content:
+            application/samlmetadata+xml:
+              schema: { type: string }
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: End session (and single logout where supported)
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  idpLogoutUrl: { type: [string, 'null'], format: uri }
+
+  # ───────────────────────────── Users ─────────────────────────────
+  /me:
+    get:
+      tags: [Users]
+      operationId: getMe
+      summary: Current user, roles, CSRF token and consent state
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /me/preferences:
+    patch:
+      tags: [Users]
+      operationId: updateMyPreferences
+      summary: Update accessibility and monitoring preferences
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Preferences' }
+      responses:
+        '200':
+          description: Updated preferences
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Preferences' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /me/dashboard:
+    get:
+      tags: [Users, Enrolments]
+      operationId: getMyDashboard
+      summary: Learner's assigned courses with progress and due dates (FR04, FR11)
+      responses:
+        '200':
+          description: Dashboard
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enrolments:
+                    type: array
+                    items: { $ref: '#/components/schemas/EnrolmentSummary' }
+                  totals:
+                    type: object
+                    properties:
+                      assigned: { type: integer }
+                      completed: { type: integer }
+                      overdue: { type: integer }
+  /me/enrolments/{enrolmentId}:
+    get:
+      tags: [Enrolments]
+      operationId: getMyEnrolment
+      summary: Course player view — videos, unlock state, progress
+      parameters: [{ $ref: '#/components/parameters/EnrolmentId' }]
+      responses:
+        '200':
+          description: Enrolment detail for the learner
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LearnerEnrolmentDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /me/certificates:
+    get:
+      tags: [Certificates]
+      operationId: listMyCertificates
+      summary: Learner's own certificates
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: Certificates
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Certificate' }
+  /users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: Search users
+      x-roles: [ADMIN]
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: Name or email contains }
+        - { name: role, in: query, schema: { $ref: '#/components/schemas/Role' } }
+        - { name: group, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Sort' }
+      responses:
+        '200':
+          description: Users
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /users/{userId}:
+    get:
+      tags: [Users]
+      operationId: getUser
+      summary: User detail with enrolment summary
+      x-roles: [ADMIN]
+      parameters: [{ $ref: '#/components/parameters/UserId' }]
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/User'
+                  - type: object
+                    properties:
+                      enrolments:
+                        type: array
+                        items: { $ref: '#/components/schemas/EnrolmentSummary' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /users/{userId}/roles:
+    patch:
+      tags: [Users]
+      operationId: updateUserRoles
+      summary: Change a user's roles (audited)
+      x-roles: [ADMIN]
+      x-audit: USER_ROLES_CHANGED
+      parameters:
+        - { $ref: '#/components/parameters/UserId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roles, reason]
+              properties:
+                roles:
+                  type: array
+                  minItems: 1
+                  items: { $ref: '#/components/schemas/Role' }
+                reason: { $ref: '#/components/schemas/Reason' }
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────────── Courses ─────────────────────────────
+  /courses:
+    get:
+      tags: [Courses]
+      operationId: listCourses
+      summary: List courses (learners see only assigned, published courses)
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/CourseStatus' } }
+        - { name: q, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Sort' }
+      responses:
+        '200':
+          description: Courses
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Course' }
+    post:
+      tags: [Courses]
+      operationId: createCourse
+      summary: Create a course (creates draft version 1)
+      x-roles: [ADMIN]
+      x-audit: COURSE_CREATED
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseInput' }
+      responses:
+        '201':
+          description: Created
+          headers: { Location: { schema: { type: string } } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Course' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /courses/{courseId}:
+    parameters: [{ $ref: '#/components/parameters/CourseId' }]
+    get:
+      tags: [Courses]
+      operationId: getCourse
+      summary: Course metadata
+      responses:
+        '200':
+          description: Course
+          headers: { ETag: { $ref: '#/components/headers/ETag' } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Course' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Courses]
+      operationId: updateCourse
+      summary: Update course metadata
+      x-roles: [ADMIN]
+      parameters:
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Course' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+  /courses/{courseId}/archive:
+    post:
+      tags: [Courses]
+      operationId: archiveCourse
+      summary: Archive a course; enrolments become read-only
+      x-roles: [ADMIN]
+      x-audit: COURSE_ARCHIVED
+      parameters:
+        - { $ref: '#/components/parameters/CourseId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { $ref: '#/components/schemas/Reason' }
+      responses:
+        '200':
+          description: Archived
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Course' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /courses/{courseId}/versions:
+    parameters: [{ $ref: '#/components/parameters/CourseId' }]
+    get:
+      tags: [Courses]
+      operationId: listCourseVersions
+      summary: List versions of a course
+      x-roles: [ADMIN]
+      responses:
+        '200':
+          description: Versions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/CourseVersion' }
+    post:
+      tags: [Courses]
+      operationId: createCourseVersion
+      summary: Create a new draft version copied from the latest version
+      x-roles: [ADMIN]
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      responses:
+        '201':
+          description: Draft created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseVersion' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /courses/{courseId}/versions/{versionId}:
+    parameters:
+      - { $ref: '#/components/parameters/CourseId' }
+      - { $ref: '#/components/parameters/VersionId' }
+    get:
+      tags: [Courses]
+      operationId: getCourseVersion
+      summary: Version with rules, videos and assessments
+      responses:
+        '200':
+          description: Version
+          headers: { ETag: { $ref: '#/components/headers/ETag' } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseVersion' }
+    patch:
+      tags: [Courses]
+      operationId: updateCourseVersion
+      summary: Edit a draft version's rules (409 if published)
+      x-roles: [ADMIN]
+      parameters:
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CourseVersionRules' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseVersion' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+  /courses/{courseId}/versions/{versionId}/publish:
+    post:
+      tags: [Courses]
+      operationId: publishCourseVersion
+      summary: Freeze the version; it becomes immutable
+      x-roles: [ADMIN]
+      x-audit: COURSE_VERSION_PUBLISHED
+      parameters:
+        - { $ref: '#/components/parameters/CourseId' }
+        - { $ref: '#/components/parameters/VersionId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CourseVersion' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /courses/{courseId}/versions/{versionId}/videos:
+    post:
+      tags: [Videos]
+      operationId: addVideo
+      summary: Add a video to a draft version
+      x-roles: [ADMIN]
+      parameters:
+        - { $ref: '#/components/parameters/CourseId' }
+        - { $ref: '#/components/parameters/VersionId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VideoInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Video' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /courses/{courseId}/versions/{versionId}/assessments:
+    parameters:
+      - { $ref: '#/components/parameters/CourseId' }
+      - { $ref: '#/components/parameters/VersionId' }
+    get:
+      tags: [Assessments]
+      operationId: listAssessments
+      summary: Final assessments for a version
+      x-roles: [ADMIN]
+      responses:
+        '200':
+          description: Assessments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Assessment' }
+    post:
+      tags: [Assessments]
+      operationId: createAssessment
+      summary: Configure the final quiz for a draft version
+      x-roles: [ADMIN]
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssessmentInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Assessment' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ───────────────────────────── Videos ─────────────────────────────
+  /videos/{videoId}:
+    parameters: [{ $ref: '#/components/parameters/VideoId' }]
+    get:
+      tags: [Videos]
+      operationId: getVideo
+      summary: Video metadata
+      x-roles: [ADMIN]
+      responses:
+        '200':
+          description: Video
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Video' }
+    patch:
+      tags: [Videos]
+      operationId: updateVideo
+      summary: Update title, order or required watch percentage (draft only)
+      x-roles: [ADMIN]
+      parameters:
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VideoInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Video' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Videos]
+      operationId: deleteVideo
+      summary: Remove a video from a draft version
+      x-roles: [ADMIN]
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      responses:
+        '204': { description: Deleted }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /videos/{videoId}/upload-url:
+    post:
+      tags: [Videos]
+      operationId: createVideoUploadUrl
+      summary: Presigned S3 multipart upload (MinIO locally)
+      x-roles: [ADMIN]
+      parameters:
+        - { $ref: '#/components/parameters/VideoId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileName, contentType, sizeBytes]
+              properties:
+                fileName: { type: string }
+                contentType: { type: string, enum: [video/mp4, video/webm, video/quicktime] }
+                sizeBytes: { type: integer, maximum: 10737418240 }
+      responses:
+        '200':
+          description: Upload instructions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadId: { type: string }
+                  partSizeBytes: { type: integer }
+                  parts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        partNumber: { type: integer }
+                        url: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+  /videos/{videoId}/upload-complete:
+    post:
+      tags: [Videos]
+      operationId: completeVideoUpload
+      summary: Complete multipart upload and start processing
+      x-roles: [ADMIN]
+      parameters:
+        - { $ref: '#/components/parameters/VideoId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uploadId, parts]
+              properties:
+                uploadId: { type: string }
+                parts:
+                  type: array
+                  items:
+                    type: object
+                    required: [partNumber, etag]
+                    properties:
+                      partNumber: { type: integer }
+                      etag: { type: string }
+      responses:
+        '202':
+          description: Processing started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Video' }
+  /videos/{videoId}/captions/{lang}:
+    put:
+      tags: [Videos]
+      operationId: putCaptions
+      summary: Upload WebVTT captions for a language
+      x-roles: [ADMIN]
+      parameters:
+        - { $ref: '#/components/parameters/VideoId' }
+        - { name: lang, in: path, required: true, schema: { type: string, example: en } }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          text/vtt:
+            schema: { type: string }
+      responses:
+        '204': { description: Stored }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /videos/{videoId}/checkpoints:
+    parameters: [{ $ref: '#/components/parameters/VideoId' }]
+    get:
+      tags: [Videos]
+      operationId: listCheckpoints
+      summary: Embedded quiz checkpoints for a video
+      x-roles: [ADMIN]
+      responses:
+        '200':
+          description: Checkpoints
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Checkpoint' }
+    post:
+      tags: [Videos]
+      operationId: createCheckpoint
+      summary: Add an embedded checkpoint (draft version only)
+      x-roles: [ADMIN]
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckpointInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Checkpoint' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /videos/{videoId}/checkpoints/{checkpointId}:
+    parameters:
+      - { $ref: '#/components/parameters/VideoId' }
+      - { $ref: '#/components/parameters/CheckpointId' }
+    patch:
+      tags: [Videos]
+      operationId: updateCheckpoint
+      summary: Edit a checkpoint
+      x-roles: [ADMIN]
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckpointInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Checkpoint' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Videos]
+      operationId: deleteCheckpoint
+      summary: Remove a checkpoint
+      x-roles: [ADMIN]
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      responses:
+        '204': { description: Deleted }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ───────────────────────────── Question banks ─────────────────────────────
+  /question-banks:
+    get:
+      tags: [QuestionBanks]
+      operationId: listQuestionBanks
+      summary: List question banks
+      x-roles: [ADMIN]
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: Banks
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/QuestionBank' }
+    post:
+      tags: [QuestionBanks]
+      operationId: createQuestionBank
+      summary: Create a question bank
+      x-roles: [ADMIN]
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuestionBankInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuestionBank' }
+  /question-banks/{bankId}:
+    parameters: [{ $ref: '#/components/parameters/BankId' }]
+    get:
+      tags: [QuestionBanks]
+      operationId: getQuestionBank
+      summary: Bank metadata with question counts by topic and difficulty
+      x-roles: [ADMIN]
+      responses:
+        '200':
+          description: Bank
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuestionBank' }
+    patch:
+      tags: [QuestionBanks]
+      operationId: updateQuestionBank
+      summary: Update bank metadata
+      x-roles: [ADMIN]
+      parameters:
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuestionBankInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuestionBank' }
+    delete:
+      tags: [QuestionBanks]
+      operationId: deleteQuestionBank
+      summary: Delete an unused bank (409 if referenced by a published version)
+      x-roles: [ADMIN]
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      responses:
+        '204': { description: Deleted }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /question-banks/{bankId}/questions:
+    parameters: [{ $ref: '#/components/parameters/BankId' }]
+    get:
+      tags: [QuestionBanks]
+      operationId: listQuestions
+      summary: List questions in a bank (admin view includes answer keys)
+      x-roles: [ADMIN]
+      parameters:
+        - { name: topic, in: query, schema: { type: string } }
+        - { name: difficulty, in: query, schema: { $ref: '#/components/schemas/Difficulty' } }
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/QuestionType' } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: Questions
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AdminQuestion' }
+    post:
+      tags: [QuestionBanks]
+      operationId: createQuestion
+      summary: Add a question
+      x-roles: [ADMIN]
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuestionInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminQuestion' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /questions/{questionId}:
+    parameters: [{ $ref: '#/components/parameters/QuestionId' }]
+    get:
+      tags: [QuestionBanks]
+      operationId: getQuestion
+      summary: Question with options, answer key and feedback
+      x-roles: [ADMIN]
+      responses:
+        '200':
+          description: Question
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminQuestion' }
+    patch:
+      tags: [QuestionBanks]
+      operationId: updateQuestion
+      summary: Edit a question (creates a new question revision; published versions keep the old one)
+      x-roles: [ADMIN]
+      parameters:
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QuestionInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminQuestion' }
+    delete:
+      tags: [QuestionBanks]
+      operationId: deleteQuestion
+      summary: Retire a question (soft delete)
+      x-roles: [ADMIN]
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      responses:
+        '204': { description: Retired }
+
+  # ───────────────────────────── Assessments ─────────────────────────────
+  /assessments/{assessmentId}:
+    parameters: [{ $ref: '#/components/parameters/AssessmentId' }]
+    get:
+      tags: [Assessments]
+      operationId: getAssessment
+      summary: Assessment configuration
+      x-roles: [ADMIN]
+      responses:
+        '200':
+          description: Assessment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Assessment' }
+    patch:
+      tags: [Assessments]
+      operationId: updateAssessment
+      summary: Edit a draft assessment
+      x-roles: [ADMIN]
+      parameters:
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssessmentInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Assessment' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # ───────────────────────────── Enrolments ─────────────────────────────
+  /enrolments:
+    get:
+      tags: [Enrolments]
+      operationId: listEnrolments
+      summary: Filter enrolments
+      x-roles: [ADMIN, AUDITOR]
+      parameters:
+        - { name: courseId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: userId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/EnrolmentStatus' } }
+        - { name: group, in: query, schema: { type: string } }
+        - { name: dueBefore, in: query, schema: { type: string, format: date } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Sort' }
+      responses:
+        '200':
+          description: Enrolments
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Enrolment' }
+    post:
+      tags: [Enrolments]
+      operationId: createEnrolments
+      summary: Assign users or groups to a course
+      x-roles: [ADMIN]
+      x-audit: ENROLMENTS_CREATED
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [courseId]
+              properties:
+                courseId: { $ref: '#/components/schemas/Id' }
+                userIds:
+                  type: array
+                  items: { $ref: '#/components/schemas/Id' }
+                groups:
+                  type: array
+                  items: { type: string }
+                dueAt: { type: string, format: date-time }
+      responses:
+        '201':
+          description: Result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created: { type: integer }
+                  skippedAlreadyEnrolled: { type: integer }
+                  enrolmentIds:
+                    type: array
+                    items: { $ref: '#/components/schemas/Id' }
+  /enrolments/bulk:
+    post:
+      tags: [Enrolments]
+      operationId: bulkEnrolCsv
+      summary: CSV bulk enrolment (conditional enhancement, FR16)
+      x-roles: [ADMIN]
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, courseId]
+              properties:
+                file: { type: string, contentMediaType: text/csv }
+                courseId: { $ref: '#/components/schemas/Id' }
+                dryRun: { type: boolean, default: true }
+      responses:
+        '200':
+          description: Validation report (and result when dryRun is false)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  rows: { type: integer }
+                  valid: { type: integer }
+                  created: { type: integer }
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        line: { type: integer }
+                        message: { type: string }
+  /enrolments/{enrolmentId}:
+    parameters: [{ $ref: '#/components/parameters/EnrolmentId' }]
+    get:
+      tags: [Enrolments]
+      operationId: getEnrolment
+      summary: Enrolment with progress, attempts and flags
+      x-roles: [ADMIN, AUDITOR]
+      responses:
+        '200':
+          description: Enrolment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Enrolment' }
+    patch:
+      tags: [Enrolments]
+      operationId: updateEnrolment
+      summary: Change due date or override status (audited, reason required)
+      x-roles: [ADMIN]
+      x-audit: ENROLMENT_UPDATED
+      parameters:
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IfMatch' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                dueAt: { type: string, format: date-time }
+                status: { $ref: '#/components/schemas/EnrolmentStatus' }
+                extraAttempts: { type: integer, minimum: 0, maximum: 5 }
+                reason: { $ref: '#/components/schemas/Reason' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Enrolment' }
+  /enrolments/{enrolmentId}/withdraw:
+    post:
+      tags: [Enrolments]
+      operationId: withdrawEnrolment
+      summary: Withdraw an enrolment
+      x-roles: [ADMIN]
+      x-audit: ENROLMENT_WITHDRAWN
+      parameters:
+        - { $ref: '#/components/parameters/EnrolmentId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { $ref: '#/components/schemas/Reason' }
+      responses:
+        '200':
+          description: Withdrawn
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Enrolment' }
+  /enrolments/{enrolmentId}/attempts:
+    post:
+      tags: [Attempts]
+      operationId: startAttempt
+      summary: Start a final-assessment attempt
+      description: Returns 422 `VIDEOS_INCOMPLETE` or `RETRIES_EXHAUSTED` when blocked; 409 `ATTEMPT_IN_PROGRESS` if one is open.
+      x-roles: [LEARNER]
+      parameters:
+        - { $ref: '#/components/parameters/EnrolmentId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [assessmentId]
+              properties:
+                assessmentId: { $ref: '#/components/schemas/Id' }
+      responses:
+        '201':
+          description: Attempt started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Attempt' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
+  # ───────────────────────────── Playback ─────────────────────────────
+  /playback-sessions:
+    post:
+      tags: [Playback]
+      operationId: startPlaybackSession
+      summary: Start a playback session for one video
+      description: Closes any other active session for the learner (recorded as a CONCURRENT_SESSION event).
+      x-roles: [LEARNER]
+      parameters:
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enrolmentId, videoId]
+              properties:
+                enrolmentId: { $ref: '#/components/schemas/Id' }
+                videoId: { $ref: '#/components/schemas/Id' }
+                monitoringMode: { $ref: '#/components/schemas/MonitoringMode' }
+      responses:
+        '201':
+          description: Session started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaybackSessionStart' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /playback-sessions/{sessionId}:
+    get:
+      tags: [Playback]
+      operationId: getPlaybackSession
+      summary: Session state
+      parameters: [{ $ref: '#/components/parameters/SessionId' }]
+      responses:
+        '200':
+          description: Session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaybackSession' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /playback-sessions/{sessionId}/media-access:
+    post:
+      tags: [Playback]
+      operationId: refreshMediaAccess
+      summary: Issue fresh CloudFront signed cookies or URL (5-minute TTL)
+      x-roles: [LEARNER]
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      responses:
+        '200':
+          description: Signed access issued; cookies set via Set-Cookie
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MediaAccess' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /playback-sessions/{sessionId}/heartbeats:
+    post:
+      tags: [Playback]
+      operationId: postHeartbeat
+      summary: Report playback position; server accepts or rejects (FR05, FR06)
+      x-roles: [LEARNER]
+      x-rate-limit: 12/min per session
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HeartbeatInput' }
+      responses:
+        '200':
+          description: Heartbeat processed (check `accepted`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HeartbeatResult' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /playback-sessions/{sessionId}/events:
+    post:
+      tags: [Playback]
+      operationId: postPlayerEvents
+      summary: Report player events (seek attempts, pause, tab hidden, rate change)
+      x-roles: [LEARNER]
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  maxItems: 50
+                  items: { $ref: '#/components/schemas/PlayerEvent' }
+      responses:
+        '202': { description: Recorded }
+  /playback-sessions/{sessionId}/checkpoints/{checkpointId}/question:
+    get:
+      tags: [Playback]
+      operationId: getCheckpointQuestion
+      summary: Embedded question (only once accepted position reaches the checkpoint)
+      x-roles: [LEARNER]
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/CheckpointId' }
+      responses:
+        '200':
+          description: Question without answer key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LearnerQuestion' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /playback-sessions/{sessionId}/checkpoints/{checkpointId}/answer:
+    post:
+      tags: [Playback]
+      operationId: answerCheckpoint
+      summary: Grade an embedded answer and return the continuation decision
+      x-roles: [LEARNER]
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/CheckpointId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnswerInput' }
+      responses:
+        '200':
+          description: Graded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckpointResult' }
+  /playback-sessions/{sessionId}/end:
+    post:
+      tags: [Playback]
+      operationId: endPlaybackSession
+      summary: Close the session cleanly and flush progress
+      x-roles: [LEARNER]
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                finalSeq: { type: integer }
+                positionSec: { type: number }
+      responses:
+        '200':
+          description: Session ended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlaybackSession' }
+
+  # ───────────────────────────── Attempts ─────────────────────────────
+  /attempts/{attemptId}:
+    get:
+      tags: [Attempts]
+      operationId: getAttempt
+      summary: Attempt with questions (no answer keys), saved answers and deadline
+      parameters: [{ $ref: '#/components/parameters/AttemptId' }]
+      responses:
+        '200':
+          description: Attempt
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Attempt' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /attempts/{attemptId}/answers/{questionId}:
+    put:
+      tags: [Attempts]
+      operationId: saveAnswer
+      summary: Save one answer (autosave)
+      x-roles: [LEARNER]
+      parameters:
+        - { $ref: '#/components/parameters/AttemptId' }
+        - { $ref: '#/components/parameters/QuestionId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnswerInput' }
+      responses:
+        '204': { description: Saved }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /attempts/{attemptId}/submit:
+    post:
+      tags: [Attempts]
+      operationId: submitAttempt
+      summary: Submit for server-side grading; issues certificate if completion rules pass
+      x-roles: [LEARNER]
+      x-audit: ATTEMPT_SUBMITTED
+      parameters:
+        - { $ref: '#/components/parameters/AttemptId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      responses:
+        '200':
+          description: Graded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttemptResult' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /attempts/{attemptId}/result:
+    get:
+      tags: [Attempts]
+      operationId: getAttemptResult
+      summary: Score, decision and feedback per the assessment's feedback mode
+      parameters: [{ $ref: '#/components/parameters/AttemptId' }]
+      responses:
+        '200':
+          description: Result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AttemptResult' }
+
+  # ───────────────────────────── Monitoring ─────────────────────────────
+  /playback-sessions/{sessionId}/monitoring/consent:
+    post:
+      tags: [Monitoring]
+      operationId: recordMonitoringConsent
+      summary: Record notice acknowledgement, camera outcome or chosen alternative
+      x-roles: [LEARNER]
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [noticeVersion, outcome]
+              properties:
+                noticeVersion: { type: string, example: '2026-10' }
+                outcome: { type: string, enum: [CAMERA_GRANTED, CAMERA_DENIED, CAMERA_UNAVAILABLE, ALTERNATIVE_REQUESTED] }
+      responses:
+        '204': { description: Recorded }
+  /playback-sessions/{sessionId}/monitoring-events:
+    post:
+      tags: [Monitoring]
+      operationId: postMonitoringEvents
+      summary: Batch of face-presence summaries (no images accepted)
+      x-roles: [LEARNER]
+      x-rate-limit: 30/min per session
+      parameters:
+        - { $ref: '#/components/parameters/SessionId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: array
+                  maxItems: 50
+                  items: { $ref: '#/components/schemas/MonitoringEventInput' }
+      responses:
+        '202':
+          description: Recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recorded: { type: integer }
+                  flagCreated: { type: boolean }
+  /flags:
+    get:
+      tags: [Monitoring]
+      operationId: listFlags
+      summary: Review queue
+      x-roles: [ADMIN, REVIEWER]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/FlagStatus' } }
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/FlagType' } }
+        - { name: courseId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Sort' }
+      responses:
+        '200':
+          description: Flags
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Flag' }
+  /flags/{flagId}:
+    get:
+      tags: [Monitoring]
+      operationId: getFlag
+      summary: Flag with evidence summary and timeline
+      x-roles: [ADMIN, REVIEWER]
+      parameters: [{ $ref: '#/components/parameters/FlagId' }]
+      responses:
+        '200':
+          description: Flag
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FlagDetail' }
+  /flags/{flagId}/review:
+    post:
+      tags: [Monitoring]
+      operationId: reviewFlag
+      summary: Record a human review decision (FR09)
+      x-roles: [ADMIN, REVIEWER]
+      x-audit: FLAG_REVIEWED
+      parameters:
+        - { $ref: '#/components/parameters/FlagId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, reason]
+              properties:
+                decision: { type: string, enum: [DISMISSED, CONFIRMED, ESCALATED] }
+                reason: { $ref: '#/components/schemas/Reason' }
+      responses:
+        '200':
+          description: Reviewed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Flag' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /flags/{flagId}/appeal:
+    post:
+      tags: [Monitoring]
+      operationId: appealFlag
+      summary: Learner explanation or appeal
+      x-roles: [LEARNER]
+      parameters:
+        - { $ref: '#/components/parameters/FlagId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string, minLength: 10, maxLength: 2000 }
+      responses:
+        '201':
+          description: Appeal recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Flag' }
+
+  # ───────────────────────────── Certificates ─────────────────────────────
+  /certificates:
+    get:
+      tags: [Certificates]
+      operationId: listCertificates
+      summary: Search issued certificates
+      x-roles: [ADMIN, AUDITOR]
+      parameters:
+        - { name: courseId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: userId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/CertificateStatus' } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: Certificates
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/Certificate' }
+  /certificates/{certificateId}:
+    get:
+      tags: [Certificates]
+      operationId: getCertificate
+      summary: Certificate record and signed claims
+      parameters: [{ $ref: '#/components/parameters/CertificateId' }]
+      responses:
+        '200':
+          description: Certificate
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Certificate' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /certificates/{certificateId}/pdf:
+    get:
+      tags: [Certificates]
+      operationId: downloadCertificatePdf
+      summary: Download PDF (redirect to short-lived S3 URL)
+      parameters: [{ $ref: '#/components/parameters/CertificateId' }]
+      responses:
+        '302': { description: Redirect to signed PDF URL }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /certificates/{certificateId}/revoke:
+    post:
+      tags: [Certificates]
+      operationId: revokeCertificate
+      summary: Revoke a certificate
+      x-roles: [ADMIN]
+      x-audit: CERTIFICATE_REVOKED
+      parameters:
+        - { $ref: '#/components/parameters/CertificateId' }
+        - { $ref: '#/components/parameters/CsrfHeader' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { $ref: '#/components/schemas/Reason' }
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Certificate' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /public/certificates/{serial}/verify:
+    get:
+      tags: [Certificates]
+      operationId: verifyCertificate
+      summary: Public QR verification target
+      security: []
+      x-rate-limit: 30/min per IP
+      parameters:
+        - { name: serial, in: path, required: true, schema: { type: string, example: EC-2026-7F3K9Q } }
+      responses:
+        '200':
+          description: Verification result (also for revoked or expired)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VerificationResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /public/keys:
+    get:
+      tags: [Certificates]
+      operationId: getSigningKeys
+      summary: Certificate signing public keys (JWKS)
+      security: []
+      responses:
+        '200':
+          description: JWKS
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kid: { type: string }
+                        kty: { type: string, example: OKP }
+                        crv: { type: string, example: Ed25519 }
+                        x: { type: string }
+                        use: { type: string, example: sig }
+                        notAfter: { type: [string, 'null'], format: date-time }
+
+  # ───────────────────────────── Reports ─────────────────────────────
+  /reports/compliance:
+    get:
+      tags: [Reports]
+      operationId: getComplianceReport
+      summary: Enrolment status by course, group and date range (FR13)
+      x-roles: [ADMIN, AUDITOR]
+      parameters:
+        - { $ref: '#/components/parameters/ReportCourseId' }
+        - { $ref: '#/components/parameters/ReportGroup' }
+        - { $ref: '#/components/parameters/ReportFrom' }
+        - { $ref: '#/components/parameters/ReportTo' }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/EnrolmentStatus' } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageEnvelope'
+                  - type: object
+                    properties:
+                      summary:
+                        type: object
+                        properties:
+                          assigned: { type: integer }
+                          completed: { type: integer }
+                          inProgress: { type: integer }
+                          overdue: { type: integer }
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/ComplianceRow' }
+  /reports/assessments:
+    get:
+      tags: [Reports]
+      operationId: getAssessmentReport
+      summary: Attempt and score summaries
+      x-roles: [ADMIN, AUDITOR]
+      parameters:
+        - { $ref: '#/components/parameters/ReportCourseId' }
+        - { $ref: '#/components/parameters/ReportFrom' }
+        - { $ref: '#/components/parameters/ReportTo' }
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attempts: { type: integer }
+                  passRate: { type: number }
+                  meanScore: { type: number }
+                  byQuestion:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        questionId: { $ref: '#/components/schemas/Id' }
+                        correctRate: { type: number }
+  /reports/monitoring:
+    get:
+      tags: [Reports]
+      operationId: getMonitoringReport
+      summary: Flag counts and outcomes, technical interruptions vs absence
+      x-roles: [ADMIN, AUDITOR]
+      parameters:
+        - { $ref: '#/components/parameters/ReportCourseId' }
+        - { $ref: '#/components/parameters/ReportFrom' }
+        - { $ref: '#/components/parameters/ReportTo' }
+      responses:
+        '200':
+          description: Report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  byType:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        type: { $ref: '#/components/schemas/FlagType' }
+                        open: { type: integer }
+                        dismissed: { type: integer }
+                        confirmed: { type: integer }
+                        escalated: { type: integer }
+                  technicalInterruptions: { type: integer }
+  /reports/exports:
+    post:
+      tags: [Reports]
+      operationId: createReportExport
+      summary: Start a CSV or PDF export job
+      x-roles: [ADMIN, AUDITOR]
+      x-audit: REPORT_EXPORTED
+      parameters: [{ $ref: '#/components/parameters/CsrfHeader' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [report, format]
+              properties:
+                report: { type: string, enum: [compliance, assessments, monitoring, certificates] }
+                format: { type: string, enum: [CSV, PDF] }
+                filters:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '202':
+          description: Job accepted
+          headers: { Location: { schema: { type: string } } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExportJob' }
+  /reports/exports/{exportId}:
+    get:
+      tags: [Reports]
+      operationId: getReportExport
+      summary: Export job status and download URL when ready
+      x-roles: [ADMIN, AUDITOR]
+      parameters:
+        - { name: exportId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: Job
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExportJob' }
+
+  # ───────────────────────────── Audit & system ─────────────────────────────
+  /audit-events:
+    get:
+      tags: [Audit]
+      operationId: listAuditEvents
+      summary: Query the append-only audit log (FR14)
+      x-roles: [ADMIN, AUDITOR]
+      parameters:
+        - { name: actorId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: action, in: query, schema: { type: string } }
+        - { name: targetType, in: query, schema: { type: string } }
+        - { name: targetId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { $ref: '#/components/parameters/ReportFrom' }
+        - { $ref: '#/components/parameters/ReportTo' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PageEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: '#/components/schemas/AuditEvent' }
+  /health:
+    get:
+      tags: [System]
+      operationId: health
+      summary: Liveness
+      security: []
+      responses:
+        '200': { description: Process is up }
+  /ready:
+    get:
+      tags: [System]
+      operationId: ready
+      summary: Readiness (PostgreSQL, Redis, S3 reachable)
+      security: []
+      responses:
+        '200': { description: Ready }
+        '503': { description: A dependency is unavailable }
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: ec_session
+      description: Opaque session id (Secure, HttpOnly, SameSite=Lax). Issued after OIDC/SAML login.
+
+  headers:
+    ETag:
+      schema: { type: string }
+
+  parameters:
+    CsrfHeader:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: { type: string }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      schema: { type: string, maxLength: 128 }
+    IfMatch:
+      name: If-Match
+      in: header
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Sort:
+      name: sort
+      in: query
+      description: Field name, prefix with - for descending
+      schema: { type: string, example: -createdAt }
+    UserId: { name: userId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    CourseId: { name: courseId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    VersionId: { name: versionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    VideoId: { name: videoId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    CheckpointId: { name: checkpointId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    BankId: { name: bankId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    QuestionId: { name: questionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    AssessmentId: { name: assessmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    EnrolmentId: { name: enrolmentId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    SessionId: { name: sessionId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    AttemptId: { name: attemptId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    FlagId: { name: flagId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    CertificateId: { name: certificateId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+    ReportCourseId: { name: courseId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+    ReportGroup: { name: group, in: query, schema: { type: string } }
+    ReportFrom: { name: from, in: query, schema: { type: string, format: date } }
+    ReportTo: { name: to, in: query, schema: { type: string, format: date } }
+
+  responses:
+    BadRequest:
+      description: Malformed request or schema validation failure
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Not signed in or session expired
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Role check failed
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Not found or not visible to this user
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: State conflict
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    PreconditionFailed:
+      description: ETag mismatch
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unprocessable:
+      description: Business rule violated
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Id:
+      type: string
+      format: uuid
+      description: UUID v7
+    Reason:
+      type: string
+      minLength: 5
+      maxLength: 1000
+    Timestamps:
+      type: object
+      properties:
+        createdAt: { type: string, format: date-time, readOnly: true }
+        updatedAt: { type: string, format: date-time, readOnly: true }
+
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code:
+          type: string
+          description: Stable machine-readable error code
+          examples:
+            - VALIDATION_FAILED
+            - SESSION_EXPIRED
+            - FORBIDDEN
+            - NOT_FOUND
+            - VERSION_ALREADY_PUBLISHED
+            - CONCURRENT_SESSION
+            - PROGRESS_JUMP_REJECTED
+            - CHECKPOINT_NOT_REACHED
+            - VIDEOS_INCOMPLETE
+            - RETRIES_EXHAUSTED
+            - ATTEMPT_IN_PROGRESS
+            - ATTEMPT_EXPIRED
+            - COMPLETION_RULES_UNMET
+            - RATE_LIMITED
+        detail: { type: string }
+        instance: { type: string }
+        requestId: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              path: { type: string }
+              message: { type: string }
+
+    PageEnvelope:
+      type: object
+      required: [data, page]
+      properties:
+        data: { type: array, items: {} }
+        page:
+          type: object
+          properties:
+            nextCursor: { type: [string, 'null'] }
+            limit: { type: integer }
+
+    # ── Users ──
+    Role:
+      type: string
+      enum: [LEARNER, ADMIN, REVIEWER, AUDITOR]
+    User:
+      allOf:
+        - $ref: '#/components/schemas/Timestamps'
+        - type: object
+          required: [id, displayName, email, roles]
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            externalId: { type: string, description: IdP subject }
+            displayName: { type: string }
+            email: { type: string, format: email }
+            groups:
+              type: array
+              items: { type: string }
+            roles:
+              type: array
+              items: { $ref: '#/components/schemas/Role' }
+            lastLoginAt: { type: [string, 'null'], format: date-time }
+    Preferences:
+      type: object
+      properties:
+        captionsDefault: { type: boolean }
+        captionLanguage: { type: string, example: en }
+        reducedMotion: { type: boolean }
+        monitoringAlternativeRequested:
+          type: boolean
+          description: Learner requests the documented non-webcam route
+    Me:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            csrfToken: { type: string }
+            preferences: { $ref: '#/components/schemas/Preferences' }
+            monitoringNoticeAcceptedVersion: { type: [string, 'null'] }
+
+    # ── Courses ──
+    CourseStatus:
+      type: string
+      enum: [DRAFT, ACTIVE, ARCHIVED]
+    CourseInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, maxLength: 200 }
+        code: { type: string, maxLength: 32, example: ITSEC-101 }
+        description: { type: string, maxLength: 5000 }
+        category: { type: string, example: IT security }
+        seriesId: { $ref: '#/components/schemas/Id' }
+    Course:
+      allOf:
+        - $ref: '#/components/schemas/CourseInput'
+        - $ref: '#/components/schemas/Timestamps'
+        - type: object
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            status: { $ref: '#/components/schemas/CourseStatus' }
+            currentVersionId: { $ref: '#/components/schemas/Id' }
+            draftVersionId: { type: [string, 'null'], format: uuid }
+    CourseVersionRules:
+      type: object
+      properties:
+        changeNote: { type: string }
+        requireVideosInOrder: { type: boolean, default: true }
+        seekToleranceSec: { type: number, default: 2, minimum: 0, maximum: 10 }
+        heartbeatIntervalSec: { type: integer, default: 15, minimum: 5, maximum: 60 }
+        monitoring:
+          type: object
+          properties:
+            mode: { $ref: '#/components/schemas/MonitoringMode' }
+            sampleIntervalSec: { type: integer, default: 10 }
+            absenceFlagAfterSec: { type: integer, default: 60 }
+            flagsBlockCompletion:
+              type: boolean
+              default: false
+              description: If true, completion waits for open flags to be reviewed (never auto-fails)
+        certificate:
+          type: object
+          properties:
+            validityMonths: { type: [integer, 'null'], description: null = no expiry }
+            template: { type: string }
+    CourseVersion:
+      allOf:
+        - $ref: '#/components/schemas/CourseVersionRules'
+        - $ref: '#/components/schemas/Timestamps'
+        - type: object
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            courseId: { $ref: '#/components/schemas/Id' }
+            number: { type: integer }
+            status: { type: string, enum: [DRAFT, PUBLISHED, RETIRED] }
+            publishedAt: { type: [string, 'null'], format: date-time }
+            contentHash: { type: [string, 'null'], description: SHA-256 of frozen content and rules }
+            videos:
+              type: array
+              items: { $ref: '#/components/schemas/Video' }
+            assessmentIds:
+              type: array
+              items: { $ref: '#/components/schemas/Id' }
+
+    # ── Videos ──
+    VideoInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        order: { type: integer, minimum: 1 }
+        requiredWatchPct: { type: number, minimum: 50, maximum: 100, default: 95 }
+        transcript: { type: string }
+    Video:
+      allOf:
+        - $ref: '#/components/schemas/VideoInput'
+        - type: object
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            versionId: { $ref: '#/components/schemas/Id' }
+            durationSec: { type: [number, 'null'] }
+            processingStatus: { type: string, enum: [AWAITING_UPLOAD, PROCESSING, READY, FAILED] }
+            captionLanguages:
+              type: array
+              items: { type: string }
+            checkpointCount: { type: integer }
+    CheckpointInput:
+      type: object
+      required: [atSec, selection]
+      properties:
+        atSec: { type: number, minimum: 0 }
+        selection: { $ref: '#/components/schemas/SelectionRule' }
+        continuation:
+          type: string
+          enum: [CONTINUE_ALWAYS, RETRY_UNTIL_CORRECT, REWATCH_SEGMENT]
+          default: CONTINUE_ALWAYS
+        rewatchFromSec: { type: number }
+        maxTries: { type: integer, default: 2 }
+        countsTowardScore: { type: boolean, default: false }
+    Checkpoint:
+      allOf:
+        - $ref: '#/components/schemas/CheckpointInput'
+        - type: object
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            videoId: { $ref: '#/components/schemas/Id' }
+
+    # ── Question banks ──
+    QuestionType:
+      type: string
+      enum: [SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE]
+    Difficulty:
+      type: string
+      enum: [EASY, MEDIUM, HARD]
+    QuestionBankInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        topics:
+          type: array
+          items: { type: string }
+    QuestionBank:
+      allOf:
+        - $ref: '#/components/schemas/QuestionBankInput'
+        - $ref: '#/components/schemas/Timestamps'
+        - type: object
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            questionCount: { type: integer }
+            countsByTopic:
+              type: object
+              additionalProperties: { type: integer }
+    OptionInput:
+      type: object
+      required: [text, isCorrect]
+      properties:
+        text: { type: string }
+        isCorrect: { type: boolean }
+        feedback: { type: string }
+    QuestionInput:
+      type: object
+      required: [type, prompt, options]
+      properties:
+        type: { $ref: '#/components/schemas/QuestionType' }
+        prompt: { type: string }
+        topic: { type: string }
+        difficulty: { $ref: '#/components/schemas/Difficulty' }
+        options:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items: { $ref: '#/components/schemas/OptionInput' }
+        explanation: { type: string }
+        points: { type: number, default: 1 }
+    AdminQuestion:
+      description: Admin-only shape — includes answer key
+      allOf:
+        - $ref: '#/components/schemas/QuestionInput'
+        - type: object
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            bankId: { $ref: '#/components/schemas/Id' }
+            revision: { type: integer }
+            retired: { type: boolean }
+            options:
+              type: array
+              items:
+                allOf:
+                  - $ref: '#/components/schemas/OptionInput'
+                  - type: object
+                    properties:
+                      id: { $ref: '#/components/schemas/Id' }
+    LearnerQuestion:
+      description: Learner shape — never contains isCorrect, feedback or explanation
+      type: object
+      additionalProperties: false
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        type: { $ref: '#/components/schemas/QuestionType' }
+        prompt: { type: string }
+        options:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            properties:
+              id: { $ref: '#/components/schemas/Id' }
+              text: { type: string }
+        triesRemaining: { type: integer }
+    SelectionRule:
+      type: object
+      required: [bankId]
+      properties:
+        bankId: { $ref: '#/components/schemas/Id' }
+        count: { type: integer, minimum: 1, default: 1 }
+        topics:
+          type: array
+          items: { type: string }
+        difficulty:
+          type: array
+          items: { $ref: '#/components/schemas/Difficulty' }
+        fixedQuestionIds:
+          type: array
+          items: { $ref: '#/components/schemas/Id' }
+
+    # ── Assessments ──
+    FeedbackMode:
+      type: string
+      enum: [NONE, SCORE_ONLY, CORRECTNESS, FULL_AFTER_PASS, FULL_IMMEDIATE]
+    AssessmentInput:
+      type: object
+      required: [title, selections, passMarkPct]
+      properties:
+        title: { type: string }
+        selections:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/SelectionRule' }
+        passMarkPct: { type: number, minimum: 0, maximum: 100, example: 80 }
+        maxAttempts: { type: integer, minimum: 1, default: 3 }
+        cooldownMinutes: { type: integer, default: 0 }
+        timeLimitMinutes: { type: [integer, 'null'] }
+        shuffleQuestions: { type: boolean, default: true }
+        shuffleOptions: { type: boolean, default: true }
+        feedbackMode: { $ref: '#/components/schemas/FeedbackMode' }
+    Assessment:
+      allOf:
+        - $ref: '#/components/schemas/AssessmentInput'
+        - type: object
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            versionId: { $ref: '#/components/schemas/Id' }
+
+    # ── Enrolments ──
+    EnrolmentStatus:
+      type: string
+      enum: [ASSIGNED, IN_PROGRESS, AWAITING_REVIEW, COMPLETED, FAILED, OVERDUE, WITHDRAWN]
+    EnrolmentSummary:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        courseId: { $ref: '#/components/schemas/Id' }
+        courseTitle: { type: string }
+        versionNumber: { type: integer }
+        status: { $ref: '#/components/schemas/EnrolmentStatus' }
+        dueAt: { type: [string, 'null'], format: date-time }
+        progress: { $ref: '#/components/schemas/Progress' }
+        certificateId: { type: [string, 'null'], format: uuid }
+    Progress:
+      type: object
+      properties:
+        videosCompleted: { type: integer }
+        videosTotal: { type: integer }
+        videoProgressPct: { type: number }
+        assessmentStatus: { type: string, enum: [LOCKED, AVAILABLE, IN_PROGRESS, PASSED, FAILED] }
+        attemptsUsed: { type: integer }
+        attemptsAllowed: { type: integer }
+        overallPct: { type: number }
+    Enrolment:
+      allOf:
+        - $ref: '#/components/schemas/EnrolmentSummary'
+        - $ref: '#/components/schemas/Timestamps'
+        - type: object
+          properties:
+            userId: { $ref: '#/components/schemas/Id' }
+            versionId: { $ref: '#/components/schemas/Id' }
+            assignedById: { $ref: '#/components/schemas/Id' }
+            completedAt: { type: [string, 'null'], format: date-time }
+            openFlagCount: { type: integer }
+    LearnerEnrolmentDetail:
+      allOf:
+        - $ref: '#/components/schemas/EnrolmentSummary'
+        - type: object
+          properties:
+            videos:
+              type: array
+              items:
+                type: object
+                properties:
+                  videoId: { $ref: '#/components/schemas/Id' }
+                  title: { type: string }
+                  order: { type: integer }
+                  durationSec: { type: number }
+                  unlocked: { type: boolean }
+                  maxAcceptedPositionSec: { type: number }
+                  completed: { type: boolean }
+                  captionLanguages:
+                    type: array
+                    items: { type: string }
+            assessmentId: { type: [string, 'null'], format: uuid }
+            monitoring:
+              type: object
+              properties:
+                mode: { $ref: '#/components/schemas/MonitoringMode' }
+                noticeText: { type: string }
+                noticeVersion: { type: string }
+
+    # ── Playback ──
+    MonitoringMode:
+      type: string
+      enum: [REQUIRED, OPTIONAL, OFF, ALTERNATIVE]
+    MediaAccess:
+      type: object
+      properties:
+        manifestUrl: { type: string, format: uri, description: HLS manifest on CloudFront }
+        captions:
+          type: array
+          items:
+            type: object
+            properties:
+              lang: { type: string }
+              url: { type: string, format: uri }
+        expiresAt: { type: string, format: date-time }
+    PlaybackSessionStart:
+      type: object
+      properties:
+        session: { $ref: '#/components/schemas/PlaybackSession' }
+        media: { $ref: '#/components/schemas/MediaAccess' }
+        heartbeatIntervalSec: { type: integer }
+        checkpoints:
+          type: array
+          description: Timestamps only; questions are fetched when reached
+          items:
+            type: object
+            properties:
+              id: { $ref: '#/components/schemas/Id' }
+              atSec: { type: number }
+              answered: { type: boolean }
+    PlaybackSession:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        enrolmentId: { $ref: '#/components/schemas/Id' }
+        videoId: { $ref: '#/components/schemas/Id' }
+        status: { type: string, enum: [ACTIVE, ENDED, SUPERSEDED, EXPIRED] }
+        startedAt: { type: string, format: date-time }
+        lastSeq: { type: integer }
+        acceptedPositionSec: { type: number }
+        maxAcceptedPositionSec: { type: number }
+        creditedWatchSec: { type: number }
+        rejectedHeartbeats: { type: integer }
+        videoProgressPct: { type: number }
+    HeartbeatInput:
+      type: object
+      required: [seq, positionSec, playerState, visibility, clientTime]
+      properties:
+        seq: { type: integer, minimum: 1 }
+        positionSec: { type: number, minimum: 0 }
+        playerState: { type: string, enum: [PLAYING, PAUSED, BUFFERING, ENDED] }
+        playbackRate: { type: number, minimum: 0.5, maximum: 2, default: 1 }
+        visibility: { type: string, enum: [VISIBLE, HIDDEN] }
+        clientTime: { type: string, format: date-time }
+    HeartbeatResult:
+      type: object
+      required: [accepted, acceptedPositionSec, maxAcceptedPositionSec]
+      properties:
+        accepted: { type: boolean }
+        rejectReason:
+          type: [string, 'null']
+          enum: [null, DUPLICATE_SEQ, OUT_OF_ORDER, JUMP_EXCEEDS_ELAPSED, CHECKPOINT_PENDING, SESSION_INACTIVE, NOT_CREDITED_HIDDEN, NOT_CREDITED_PAUSED]
+        acceptedPositionSec: { type: number }
+        maxAcceptedPositionSec: { type: number, description: Player must not seek beyond this }
+        videoProgressPct: { type: number }
+        videoCompleted: { type: boolean }
+        checkpointDue:
+          type: [object, 'null']
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            atSec: { type: number }
+        nextCheckpoint:
+          type: [object, 'null']
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            atSec: { type: number }
+        mediaAccessExpiresAt: { type: string, format: date-time }
+    PlayerEvent:
+      type: object
+      required: [type, at]
+      properties:
+        type: { type: string, enum: [SEEK_ATTEMPT, PAUSE, RESUME, TAB_HIDDEN, TAB_VISIBLE, RATE_CHANGE, FULLSCREEN_EXIT, ERROR] }
+        at: { type: string, format: date-time }
+        positionSec: { type: number }
+        targetSec: { type: number, description: For SEEK_ATTEMPT }
+        detail: { type: string, maxLength: 200 }
+    AnswerInput:
+      type: object
+      required: [selectedOptionIds]
+      properties:
+        selectedOptionIds:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/Id' }
+    CheckpointResult:
+      type: object
+      properties:
+        correct: { type: boolean }
+        feedback: { type: [string, 'null'] }
+        continuation: { type: string, enum: [CONTINUE, RETRY, REWATCH_FROM] }
+        rewatchFromSec: { type: [number, 'null'] }
+        triesRemaining: { type: integer }
+
+    # ── Attempts ──
+    Attempt:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        enrolmentId: { $ref: '#/components/schemas/Id' }
+        assessmentId: { $ref: '#/components/schemas/Id' }
+        number: { type: integer }
+        status: { type: string, enum: [IN_PROGRESS, SUBMITTED, EXPIRED] }
+        startedAt: { type: string, format: date-time }
+        deadlineAt: { type: [string, 'null'], format: date-time }
+        questions:
+          type: array
+          items: { $ref: '#/components/schemas/LearnerQuestion' }
+        savedAnswers:
+          type: object
+          additionalProperties:
+            type: array
+            items: { $ref: '#/components/schemas/Id' }
+    AttemptResult:
+      type: object
+      properties:
+        attemptId: { $ref: '#/components/schemas/Id' }
+        scorePct: { type: number }
+        passMarkPct: { type: number }
+        passed: { type: boolean }
+        attemptsRemaining: { type: integer }
+        retryAvailableAt: { type: [string, 'null'], format: date-time }
+        feedback:
+          type: array
+          description: Content depends on the assessment's feedbackMode
+          items:
+            type: object
+            properties:
+              questionId: { $ref: '#/components/schemas/Id' }
+              correct: { type: boolean }
+              correctOptionIds:
+                type: array
+                items: { $ref: '#/components/schemas/Id' }
+              explanation: { type: string }
+        completion:
+          type: object
+          properties:
+            status: { $ref: '#/components/schemas/EnrolmentStatus' }
+            unmetRules:
+              type: array
+              items: { type: string, example: FLAGS_AWAITING_REVIEW }
+            certificateId: { type: [string, 'null'], format: uuid }
+
+    # ── Monitoring ──
+    MonitoringEventInput:
+      type: object
+      additionalProperties: false
+      required: [type, startedAt, durationMs]
+      properties:
+        type: { type: string, enum: [FACE_PRESENT, NO_FACE, MULTIPLE_FACES, CAMERA_UNAVAILABLE, CAMERA_DENIED, DETECTOR_ERROR] }
+        startedAt: { type: string, format: date-time }
+        durationMs: { type: integer, minimum: 0 }
+        faceCount: { type: integer, minimum: 0, maximum: 10 }
+        positionSec: { type: number }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+    FlagType:
+      type: string
+      enum: [PROLONGED_ABSENCE, MULTIPLE_FACES, CAMERA_UNAVAILABLE, SEEK_MANIPULATION, CONCURRENT_SESSION, HEARTBEAT_ANOMALY]
+    FlagStatus:
+      type: string
+      enum: [OPEN, DISMISSED, CONFIRMED, ESCALATED]
+    Flag:
+      allOf:
+        - $ref: '#/components/schemas/Timestamps'
+        - type: object
+          properties:
+            id: { $ref: '#/components/schemas/Id' }
+            type: { $ref: '#/components/schemas/FlagType' }
+            status: { $ref: '#/components/schemas/FlagStatus' }
+            enrolmentId: { $ref: '#/components/schemas/Id' }
+            sessionId: { $ref: '#/components/schemas/Id' }
+            learner:
+              type: object
+              properties:
+                id: { $ref: '#/components/schemas/Id' }
+                displayName: { type: string }
+            courseTitle: { type: string }
+            summary: { type: string, example: 'No face detected for 94 s at 12:10–13:44 of video 2' }
+            reviewedBy: { type: [string, 'null'], format: uuid }
+            reviewedAt: { type: [string, 'null'], format: date-time }
+            reviewReason: { type: [string, 'null'] }
+            appealMessage: { type: [string, 'null'] }
+    FlagDetail:
+      allOf:
+        - $ref: '#/components/schemas/Flag'
+        - type: object
+          properties:
+            evidence:
+              type: object
+              properties:
+                totalAbsenceSec: { type: number }
+                longestAbsenceSec: { type: number }
+                cameraUnavailableSec: { type: number }
+                rejectedHeartbeats: { type: integer }
+                seekAttempts: { type: integer }
+            timeline:
+              type: array
+              items:
+                type: object
+                properties:
+                  at: { type: string, format: date-time }
+                  positionSec: { type: number }
+                  event: { type: string }
+
+    # ── Certificates ──
+    CertificateStatus:
+      type: string
+      enum: [VALID, EXPIRED, REVOKED]
+    Certificate:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        serial: { type: string, example: EC-2026-7F3K9Q }
+        status: { $ref: '#/components/schemas/CertificateStatus' }
+        learnerName: { type: string }
+        userId: { $ref: '#/components/schemas/Id' }
+        courseTitle: { type: string }
+        courseVersion: { type: integer }
+        enrolmentId: { $ref: '#/components/schemas/Id' }
+        issuedAt: { type: string, format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        revokedAt: { type: [string, 'null'], format: date-time }
+        claimsHash: { type: string, description: SHA-256 of canonical claims }
+        signature: { type: string, description: Ed25519 signature, base64url }
+        keyId: { type: string }
+        verifyUrl: { type: string, format: uri }
+    VerificationResult:
+      type: object
+      properties:
+        serial: { type: string }
+        valid: { type: boolean, description: Signature matches and not expired or revoked }
+        signatureValid: { type: boolean }
+        status: { $ref: '#/components/schemas/CertificateStatus' }
+        learnerName: { type: string, description: Full name or initials per client policy }
+        courseTitle: { type: string }
+        courseVersion: { type: integer }
+        issuedAt: { type: string, format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        issuer: { type: string, example: EduComply — University of Example }
+
+    # ── Reports & audit ──
+    ComplianceRow:
+      type: object
+      properties:
+        userId: { $ref: '#/components/schemas/Id' }
+        learnerName: { type: string }
+        group: { type: string }
+        courseTitle: { type: string }
+        versionNumber: { type: integer }
+        status: { $ref: '#/components/schemas/EnrolmentStatus' }
+        dueAt: { type: [string, 'null'], format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        bestScorePct: { type: [number, 'null'] }
+        openFlags: { type: integer }
+        certificateSerial: { type: [string, 'null'] }
+    ExportJob:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        status: { type: string, enum: [QUEUED, RUNNING, READY, FAILED] }
+        format: { type: string, enum: [CSV, PDF] }
+        rowCount: { type: [integer, 'null'] }
+        downloadUrl: { type: [string, 'null'], format: uri }
+        expiresAt: { type: [string, 'null'], format: date-time }
+    AuditEvent:
+      type: object
+      properties:
+        id: { $ref: '#/components/schemas/Id' }
+        at: { type: string, format: date-time }
+        actorId: { type: [string, 'null'], format: uuid }
+        actorRole: { $ref: '#/components/schemas/Role' }
+        action: { type: string, example: FLAG_REVIEWED }
+        targetType: { type: string, example: Flag }
+        targetId: { $ref: '#/components/schemas/Id' }
+        reason: { type: [string, 'null'] }
+        before: { type: [object, 'null'] }
+        after: { type: [object, 'null'] }
+        requestId: { type: string }
+        ipHash: { type: string }

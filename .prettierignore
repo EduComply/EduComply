@@ -8,3 +8,4 @@ package-lock.json
 backend/src/generated
 backend/prisma/migrations/**/*.sql
 .vscode/settings.json
+docs/openapi.yaml

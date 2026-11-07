@@ -2,7 +2,9 @@
 
 Institutional Video Training and Interactive Assessment Platform.
 
-EduComply delivers mandatory compliance training (IT security, harassment prevention, ethics) with server-validated video progress, assessments, presence monitoring and verifiable certificates. See the Full Project Proposal v1.1 for scope.
+EduComply is designed to deliver mandatory compliance training (IT security, harassment prevention, ethics) with server-validated video progress, assessments, presence monitoring and verifiable certificates (Full Project Proposal v1.1).
+
+**Current status — Sprint 1 (authentication and foundation):** institutional sign-in (OpenID Connect via Keycloak), sessions, roles, user administration, the append-only audit log, health checks, the learner and admin portal shells, Docker and CI. Course, video, assessment, monitoring, certificate and reporting features are planned for Sprints 2–6; the pages for them show labelled demonstration data or "arrives in Sprint N" notices. Implementation status, deliberate differences from the design documents and open decisions: [docs/sprint1-alignment.md](docs/sprint1-alignment.md). API contract: [docs/openapi.yaml](docs/openapi.yaml).
 
 ## Tech stack
 

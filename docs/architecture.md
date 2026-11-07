@@ -6,9 +6,9 @@ Baseline: Full Project Proposal v1.1 (8 Oct 2026) §9, Initial API Design v0.1 (
 
 ```
 Browser ──► React (Vite) ──/api/v1──► Express API (modular monolith) ──► Prisma ──► Neon PostgreSQL
-                                            │                          └────────► Redis (sessions, rate limits, hot state)
+                                            │                          └────────► Redis (sessions, rate limits, OIDC login state)
                                             └──► OpenID Connect provider (institutional login)
-Video files ──► S3 + CloudFront (signed URLs; never through the API)       [Sprint 3]
+Video files ──► S3 + CloudFront (signed URLs; never through the API)       [planned: Sprint 3]
 ```
 
 - **One deployable backend**, split into modules with explicit boundaries (proposal §9: four students cannot justify microservices). Modules can be extracted later.
@@ -52,26 +52,28 @@ Readiness body: `{ "status": "ready" | "not_ready", "checks": { "database": {sta
 
 Roles, user model, OpenID Connect flow, application shell and core CI.
 
-| Branch                       | Delivers                                                                                                         |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `feature/project-foundation` | **This branch.** Workspaces, React/Vite, Express/TS, modular layout, lint/format, env handling, app shells, docs |
-| `feature/database-prisma`    | Prisma + Neon (`DATABASE_URL` / `DIRECT_URL`), Role/User/UserIdentity/AuditEvent, first migration, seed          |
-| `feature/backend-core`       | Redis client, session store foundation, rate limiting, CORS, request ids, readiness for DB and Redis             |
-| `feature/auth-oidc`          | `/auth/login`, `/auth/oidc/callback`, `/auth/logout`, `/me`, role guard, CSRF, audit on sign-in                  |
-| `feature/frontend-shell`     | AuthProvider, protected learner/admin routes, sign-in page                                                       |
-| `feature/learner-portal-ui`  | Learner dashboard and profile built from the Figma design                                                        |
-| `feature/admin-dashboard`    | Admin overview, users and roles (audited), audit log view                                                        |
-| `feature/ci-pipeline`        | GitHub Actions: format, lint, typecheck, test, build on every PR                                                 |
+All Sprint 1 work was delivered on one branch, `feature/project-foundation` (pull request #1), as a sequence of commits:
+
+| Area           | Delivered                                                                                                                        |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Foundation     | Workspaces, React/Vite, Express/TS, modular layout, lint/format, env handling, docs                                              |
+| Database       | Prisma + Neon (`DATABASE_URL` / `DIRECT_URL`), Role/User/UserIdentity/AuditEvent, first migration, role seed                     |
+| Backend core   | Redis client, session store, rate limiting, CORS, request ids, readiness for DB and Redis                                        |
+| Authentication | `/auth/login`, `/auth/oidc/callback`, `/auth/logout`, `/me`, role guard, CSRF, audit on sign-in, role-based landing page         |
+| Portals        | AuthProvider, protected learner/admin routes, learner portal (Figma), admin dashboard, users and roles (audited), audit log view |
+| DevOps         | `npm run dev` supervisor and doctor, Docker images and Compose, GitHub Actions (quality, secrets, Docker, integration)           |
 
 Out of scope for Sprint 1: courses, playback, quizzes, monitoring, certificates, reports.
 
-## Roles (API design §4)
+## Roles
 
-| Role     | Access                                           |
-| -------- | ------------------------------------------------ |
-| LEARNER  | Own enrolments, playback, attempts, certificates |
-| ADMIN    | Content, users, enrolments, settings             |
-| REVIEWER | Monitoring flag review, reports, audit           |
+| Role     | Sprint 1 (implemented)                                              | Planned (API design §4)                                   |
+| -------- | ------------------------------------------------------------------- | --------------------------------------------------------- |
+| LEARNER  | Learner portal; own profile (`GET /me`)                             | Own enrolments, playback, attempts, certificates          |
+| ADMIN    | Admin portal; user search/detail, role changes (audited), audit log | Content, question banks, enrolments, flag review, reports |
+| REVIEWER | Admin portal (dashboard, monitoring, reports, audit log; read-only) | API design: monitoring flags only; audit log for AUDITOR  |
+
+The REVIEWER/AUDITOR split is an open client question (API design §11 Q3); see [sprint1-alignment.md](sprint1-alignment.md). No AUDITOR role exists yet.
 
 ## Sprint 1 data model (Task 2)
 
@@ -90,5 +92,6 @@ audit_event (id bigint PK, actor_id?, action, target_type?, target_id?, reason?,
 
 - **One role per user**, as in the ER diagram (`USER.role_id`). New users default to LEARNER.
 - **Identity linkage**: an external account is identified by `(issuer, subject)`; one user may have several identities (OIDC now, SAML later).
-- **Audit**: written in the same transaction as the change; IPs are stored only as SHA-256 hashes; users referenced by audit events cannot be deleted.
-- **Connections**: runtime → pooled `DATABASE_URL` via `@prisma/adapter-pg`; Prisma CLI → direct `DIRECT_URL`.
+- **Audit**: written in the same transaction as the change; IPs are stored only as keyed HMAC-SHA-256 values (`AUDIT_IP_HASH_KEY`, required in production); users referenced by audit events cannot be deleted.
+- **Connections**: runtime → pooled `DATABASE_URL` via `@prisma/adapter-pg` (TCP 5432) or `@prisma/adapter-neon` (WebSocket 443, `DATABASE_TRANSPORT=websocket`); Prisma CLI → direct `DIRECT_URL`.
+- **Role changes** lock all active ADMIN rows (`SELECT … FOR UPDATE`) before the last-administrator check, so concurrent demotions cannot remove every administrator.
