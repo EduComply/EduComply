@@ -1,0 +1,11 @@
+node_modules
+dist
+build
+coverage
+package-lock.json
+.env
+.env.*
+backend/src/generated
+backend/prisma/migrations/**/*.sql
+.vscode/settings.json
+docs/openapi.yaml
