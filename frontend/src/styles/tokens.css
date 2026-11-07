@@ -1,0 +1,123 @@
+/*
+ * EduComply design tokens — VERIFIED from the Figma file
+ * "EduComply — Learner Portal (Recreated)" (file G4Tydev3HmM7kr5yGXpogo, frames 1:2–1:11)
+ * via the Figma MCP design context (exact fills, font sizes, radii and frame geometry).
+ * The file defines no Figma variables/styles, so these are the literal layer values.
+ */
+:root {
+  /* ── Shell ─────────────────────────────────────────────────────── */
+  --ec-sidebar-bg: linear-gradient(
+    97.3deg,
+    #2563eb 12.687%,
+    #1e40af 53.731%,
+    #0f235c 87.313%
+  ); /* Navigation/Sidebar */
+  --ec-sidebar-active: #315db1; /* Item background (selected) */
+  --ec-sidebar-logout: #2563eb; /* Sidebar / Logout / Background */
+  --ec-topbar-bg: #f7f9fc; /* Header/Top Bar */
+  --ec-bg: #ffffff; /* content area */
+  --ec-canvas: #f7fafe; /* frame background */
+
+  /* ── Text ──────────────────────────────────────────────────────── */
+  --ec-text: #1b2940;
+  --ec-text-muted: #4a5c78;
+  --ec-text-subtle: #7585a0;
+  --ec-text-meta: #7286a2;
+  --ec-text-on-dark: #ffffff;
+
+  /* ── Surfaces ──────────────────────────────────────────────────── */
+  --ec-surface: #ffffff;
+  --ec-surface-subtle: #f7f9fc; /* fields, quiz answers */
+  --ec-surface-selected: #e5eefc; /* selected answer / lesson */
+  --ec-border: #e3eaf5;
+
+  /* ── Actions ───────────────────────────────────────────────────── */
+  --ec-primary: #365fa8; /* primary buttons */
+  --ec-primary-strong: #2563eb;
+  --ec-success: #16a34a; /* View Result, Review Answers, toggles on */
+  --ec-teal-action: #19a5a2; /* course card buttons */
+  --ec-focus-ring: 0 0 0 3px rgb(37 99 235 / 0.45);
+
+  /* ── Status and data ───────────────────────────────────────────── */
+  --ec-stat-blue: #2965e8;
+  --ec-stat-green: #19a653;
+  --ec-stat-red: #d92d32;
+  --ec-stat-teal: #1e8084;
+  --ec-pass: #11833e;
+  --ec-fail: #d92d32;
+  --ec-pending-bg: #fff0d9;
+  --ec-pending-text: #b94c00;
+
+  --ec-track: #e5eefa; /* progress track */
+  --ec-fill-teal: #137f75; /* continue-learning / quiz progress */
+  --ec-fill-lime: #84c43d; /* overall progress */
+  --ec-course-track: #94b0e4;
+  --ec-course-partial: #ff7914;
+  --ec-course-complete: #e3292e; /* as drawn in Figma for 100% */
+
+  --ec-chart-1: #e3292e;
+  --ec-chart-2: #f0b900;
+  --ec-chart-3: #ff7914;
+  --ec-chart-4: #83cf0b;
+  --ec-chart-5: #16a34a;
+
+  --ec-cal-day: #ecf3ff;
+  --ec-cal-day-muted: #f7f9fc;
+  --ec-cal-training: #2865e8;
+  --ec-cal-deadline: #e47800;
+  --ec-cal-completed: #137e75;
+
+  --ec-welcome-bg: #eaf5f1;
+  --ec-welcome-text: #173e3a;
+  --ec-thumb-bg: #d8eee8;
+  --ec-thumb-icon: #35435a;
+  --ec-video-bg: #19283d;
+  --ec-avatar-bg: #87a8e0;
+  --ec-avatar-text: #1f3361;
+  --ec-avatar-large-text: #1a2560;
+
+  /* Neutral badge (non-Figma: used for roles and demo labels) */
+  --ec-blue-50: #eff6ff;
+  --ec-navy-800: #1e3a8a;
+
+  /* ── Typography (Inter, self-hosted via @fontsource/inter) ─────── */
+  --ec-font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  --ec-text-xs: 0.75rem; /* 12 */
+  --ec-text-sm: 0.8125rem; /* 13 */
+  --ec-text-md: 0.875rem; /* 14 */
+  --ec-text-base: 1rem; /* 16 */
+  --ec-text-card-title: 1.0625rem; /* 17 */
+  --ec-text-lg: 1.125rem; /* 18 */
+  --ec-text-page: 1.5rem; /* 24 */
+  --ec-text-question: 1.5625rem; /* 25 */
+  --ec-text-welcome: 1.6875rem; /* 27 */
+  --ec-text-stat: 1.875rem; /* 30 */
+  --ec-text-stat-lg: 2.25rem; /* 36 */
+  --ec-text-overall: 3.125rem; /* 50 */
+  --ec-text-score: 4.5rem; /* 72 */
+
+  /* ── Spacing, radius, layout ───────────────────────────────────── */
+  --ec-space-1: 0.25rem;
+  --ec-space-2: 0.5rem;
+  --ec-space-3: 0.75rem;
+  --ec-space-4: 1rem;
+  --ec-space-5: 1.25rem; /* 20: card padding */
+  --ec-space-6: 1.5rem;
+  --ec-space-8: 2rem;
+  --ec-space-content: 2.4375rem; /* 39: content inset from sidebar */
+  --ec-radius-nav: 7px;
+  --ec-radius-sm: 8px; /* buttons, fields */
+  --ec-radius-day: 8px;
+  --ec-radius-answer: 10px;
+  --ec-radius-thumb: 12px;
+  --ec-radius-panel: 14px;
+  --ec-radius-card: 16px;
+  --ec-radius-pill: 16px;
+  --ec-radius-video: 18px;
+  --ec-shadow-card: 0 1px 2px rgb(15 23 42 / 0.05), 0 2px 8px rgb(15 23 42 / 0.05);
+
+  --ec-sidebar-width: 236px;
+  --ec-topbar-height: 76px;
+  --ec-nav-item-height: 48px;
+  --ec-button-height: 42px;
+}

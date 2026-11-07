@@ -1,0 +1,57 @@
+# ── Environment and secrets (never commit) ─────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+backend/keys/
+secrets/
+
+# ── Dependencies ───────────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+
+# ── Build output ───────────────────────────────────────────────────
+backend/src/generated/
+dist/
+build/
+*.tsbuildinfo
+.vite/
+
+# ── Tests and coverage ─────────────────────────────────────────────
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# ── Logs and runtime files ─────────────────────────────────────────
+*.log
+npm-debug.log*
+logs/
+*.pid
+.cache/
+.eslintcache
+
+# ── Local databases and uploads ────────────────────────────────────
+*.db
+*.sqlite
+uploads/
+
+# ── OS and editor files ────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+
+# ── Claude Code local settings ─────────────────────────────────────
+.claude/settings.local.json
+
+# ── Dev tooling state (npm run dev session file) ───────────────────
+.dev/
