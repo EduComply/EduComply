@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { EmptyState } from '@/components/ui';
+import { DemoNotice, EmptyState } from '@/components/ui';
 import { Icon } from '@/components/icons';
 import { formatClock } from '@/lib/format';
 import { findCourse } from '../demoData';
@@ -52,10 +52,13 @@ export function CoursePlayerPage() {
               {course.title} · Lesson {index + 1} of {course.lessons.length}
             </p>
             <p className="lesson-desc">{lesson.description}</p>
-            <p className="muted" style={{ marginTop: 16, fontSize: 13 }}>
-              Prototype: the sample video can be skipped freely and viewing is not recorded. Secure,
-              server-validated viewing progress is implemented in Sprint 3.
-            </p>
+            <div style={{ marginTop: 16 }}>
+              <DemoNotice>
+                This course and its lessons are samples. The prototype video can be skipped freely
+                and viewing is not recorded. Secure, server-validated viewing progress is
+                implemented in Sprint 3.
+              </DemoNotice>
+            </div>
             <div className="lesson-actions">
               {index > 0 && (
                 <button

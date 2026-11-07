@@ -400,6 +400,110 @@ describe('admin shell', () => {
   });
 });
 
+describe('audit events', () => {
+  const OLDER: AuditEvent = {
+    ...EVENTS[1]!,
+    id: '10',
+    at: '2026-11-03T08:00:00.000Z',
+    actorId: null,
+    action: 'user.created',
+  };
+  /** Two cursor pages: the first links to "c2", the second is the last page. */
+  const pagedEvents: RouteHandler = (url) =>
+    url.searchParams.get('cursor') === 'c2'
+      ? json(200, page([OLDER]))
+      : json(200, page(EVENTS, 'c2'));
+  const auditCalls = (fetch: ReturnType<typeof setup>) =>
+    fetch.mock.calls.map(([u]) => String(u)).filter((u) => u.startsWith('/api/v1/audit-events'));
+
+  it('pages forward and back with the API cursor', async () => {
+    const fetch = setup(ADMIN, { '/api/v1/audit-events': pagedEvents });
+    renderApp('/admin/audit');
+    const pager = await screen.findByRole('navigation', { name: 'Pagination' });
+    const previous = within(pager).getByRole('button', { name: 'Previous' }) as HTMLButtonElement;
+    const next = within(pager).getByRole('button', { name: 'Next' }) as HTMLButtonElement;
+    expect(pager.textContent).toContain('Page 1 · 2 shown');
+    expect(previous.disabled).toBe(true);
+    expect(next.disabled).toBe(false);
+
+    fireEvent.click(next);
+    expect(await screen.findByRole('cell', { name: 'Account created' })).toBeTruthy();
+    const pager2 = screen.getByRole('navigation', { name: 'Pagination' });
+    expect(pager2.textContent).toContain('Page 2 · 1 shown');
+    expect(auditCalls(fetch)).toContain('/api/v1/audit-events?limit=25&cursor=c2');
+    expect(
+      (within(pager2).getByRole('button', { name: 'Next' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    // A null actor is a system event.
+    expect(screen.getByText('System')).toBeTruthy();
+
+    fireEvent.click(within(pager2).getByRole('button', { name: 'Previous' }));
+    expect(await screen.findByText('Role changed: LEARNER → REVIEWER')).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Pagination' }).textContent).toContain(
+      'Page 1 · 2 shown',
+    );
+  });
+
+  it('changing the action filter restarts from the first page', async () => {
+    const fetch = setup(ADMIN, {
+      '/api/v1/audit-events': (url, init) =>
+        url.searchParams.get('action') === 'auth.login'
+          ? json(200, page([]))
+          : pagedEvents(url, init),
+    });
+    renderApp('/admin/audit');
+    fireEvent.click(
+      within(await screen.findByRole('navigation', { name: 'Pagination' })).getByRole('button', {
+        name: 'Next',
+      }),
+    );
+    await screen.findByRole('cell', { name: 'Account created' });
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter by action' }), {
+      target: { value: 'auth.login' },
+    });
+    expect(await screen.findByRole('heading', { name: 'No audit events' })).toBeTruthy();
+    expect(screen.getByText('No events match this filter.')).toBeTruthy();
+    expect(auditCalls(fetch).at(-1)).toBe('/api/v1/audit-events?limit=25&action=auth.login');
+  });
+
+  it('admins see names with links to the target user', async () => {
+    setup(ADMIN);
+    renderApp('/admin/audit');
+    const table = await screen.findByRole('table', { name: 'Audit events' });
+    expect(within(table).getByText('Ada Admin')).toBeTruthy();
+    const targets = within(table).getAllByRole('link', { name: 'Lea Learner' });
+    expect(targets[0]!.getAttribute('href')).toBe(`/admin/users/${LEA.id}`);
+    expect(within(table).getByText('Sprint 1 reviewer')).toBeTruthy();
+  });
+
+  it('reviewers see short ids, no user links and never call the users API', async () => {
+    const fetch = setup(REVIEWER);
+    renderApp('/admin/audit');
+    const table = await screen.findByRole('table', { name: 'Audit events' });
+    expect(within(table).getAllByText('0190f0a0…').length).toBeGreaterThan(0);
+    expect(within(table).queryByRole('link')).toBeNull();
+    expect(fetch.mock.calls.some(([u]) => String(u).startsWith('/api/v1/users'))).toBe(false);
+  });
+
+  it('shows an error state with retry', async () => {
+    let fail = true;
+    setup(ADMIN, {
+      '/api/v1/audit-events': () =>
+        fail
+          ? json(503, { code: 'SERVICE_UNAVAILABLE', status: 503, title: 'x' })
+          : json(200, page(EVENTS)),
+    });
+    renderApp('/admin/audit');
+    expect(
+      await screen.findByRole('heading', { name: 'Audit events could not be loaded' }),
+    ).toBeTruthy();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('table', { name: 'Audit events' })).toBeTruthy();
+  });
+});
+
 describe('later-sprint modules are clearly unavailable (no fabricated data)', () => {
   it.each([
     ['/admin/courses', 'Courses', 'New course'],

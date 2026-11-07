@@ -72,6 +72,42 @@ describe('navigation shell', () => {
     expect(button.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('mobile drawer returns focus to the menu button when closed', async () => {
+    const { container } = renderApp('/learner/dashboard');
+    const button = await screen.findByRole('button', { name: 'Open menu' });
+    const shell = container.querySelector('.shell')!;
+
+    fireEvent.click(button);
+    expect(shell.classList.contains('nav-open')).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Close menu' }));
+    expect(shell.classList.contains('nav-open')).toBe(false);
+    expect(document.activeElement).toBe(button);
+
+    fireEvent.click(button);
+    (screen.getByRole('link', { name: 'Calendar' }) as HTMLElement).focus();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('mobile drawer closes on a backdrop click and after navigating', async () => {
+    const { container } = renderApp('/learner/dashboard');
+    const button = await screen.findByRole('button', { name: 'Open menu' });
+
+    fireEvent.click(button);
+    fireEvent.click(container.querySelector('.sidebar-backdrop')!);
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(button);
+    const nav = screen.getByRole('navigation', { name: 'Learner portal' });
+    fireEvent.click(within(nav).getByRole('link', { name: 'My Training' }));
+    expect(await pageTitle('My Training')).toBeTruthy();
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(button.getAttribute('aria-controls')).toBe(
+      container.querySelector('.sidebar')!.getAttribute('id'),
+    );
+  });
+
   it('has a skip link and an honest notifications panel', async () => {
     renderApp('/learner/dashboard');
     expect(await screen.findByRole('link', { name: 'Skip to main content' })).toBeTruthy();
@@ -84,6 +120,23 @@ describe('navigation shell', () => {
   it('shows a 404 inside the portal for unknown learner pages', async () => {
     renderApp('/learner/nope');
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeTruthy();
+  });
+});
+
+describe('demonstration labelling', () => {
+  it.each([
+    '/learner/dashboard',
+    '/learner/training',
+    '/learner/training/machine-learning',
+    '/learner/assessments',
+    '/learner/assessments/ml-assignment-1',
+    '/learner/progress',
+    '/learner/calendar',
+  ])('%s shows sample content under a "Demonstration data" notice', async (path) => {
+    stubMedia();
+    renderApp(path);
+    const notes = await screen.findAllByRole('note');
+    expect(notes.some((n) => n.textContent?.startsWith('Demonstration data.'))).toBe(true);
   });
 });
 
